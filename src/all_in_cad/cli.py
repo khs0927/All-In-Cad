@@ -125,13 +125,17 @@ def _run_verify_dwg(
     probes: dict[ExtractionLane, ToolProbe],
 ) -> int:
     lanes = tuple(ExtractionLane(item) for item in args.lane) if args.lane else None
-    manifest = verify_dwg_across_lanes(
-        args.source,
-        probes,
-        args.workdir,
-        lanes=lanes,
-        require_digest_match=not args.no_digest,
-    )
+    try:
+        manifest = verify_dwg_across_lanes(
+            args.source,
+            probes,
+            args.workdir,
+            lanes=lanes,
+            require_digest_match=not args.no_digest,
+        )
+    except RuntimeError as exc:
+        print(f"verify-dwg: {exc}", file=sys.stderr)
+        return 2
     print(json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True))
     return 0 if manifest.verification.passed else 2
 

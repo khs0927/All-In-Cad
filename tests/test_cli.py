@@ -100,3 +100,16 @@ def test_benchmark_command_emits_structured_report(tmp_path: Path, capsys) -> No
     assert payload["requested_entities"] == 12
     assert payload["extracted_entities"] == 12
     assert len(payload["stages"]) == 3
+
+
+def test_verify_dwg_reports_missing_lanes_instead_of_crashing(tmp_path: Path, capsys) -> None:
+    drawing = tmp_path / "sample.dxf"
+    _write_fixture(drawing)
+
+    # With no acadsharp/oda/libredwg probes installed the host has fewer than
+    # two DWG lanes, so the CLI must report that cleanly and exit non-zero.
+    assert main(["verify-dwg", "--source", str(drawing), "--workdir", str(tmp_path / "work")]) == 2
+
+    captured = capsys.readouterr()
+    assert "requires at least two available DWG lanes" in captured.err
+    assert "Traceback" not in captured.err
