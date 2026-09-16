@@ -7,8 +7,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .architecture import (
+    AnnotationBinding,
+    OpeningHostRelation,
+    RoomAdjacency,
+    RoomCandidate,
+)
 from .inventory import FileRecord, InventoryManifest
 from .readback import EntitySnapshot
+from .semantic_graph import SemanticGraph
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +25,30 @@ class IndexResult:
     changed: bool
     entity_count: int
     reference_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticIndexResult:
+    drawing_id: int
+    node_count: int
+    edge_count: int
+    room_count: int
+    opening_host_count: int
+    room_adjacency_count: int
+    annotation_binding_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticSummary:
+    path: str
+    node_count: int
+    edge_count: int
+    room_count: int
+    opening_host_count: int
+    room_adjacency_count: int
+    annotation_binding_count: int
+    extraction_lane: str | None
+    snapshot_digest: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +182,186 @@ class ProjectIndex:
             len(references),
         )
 
+    def replace_semantics(
+        self,
+        drawing_id: int,
+        graph: SemanticGraph,
+        *,
+        rooms: Iterable[RoomCandidate] = (),
+        opening_hosts: Iterable[OpeningHostRelation] = (),
+        room_adjacencies: Iterable[RoomAdjacency] = (),
+        annotation_bindings: Iterable[AnnotationBinding] = (),
+        extraction_lane: str | None = None,
+        snapshot_digest: str | None = None,
+        warnings: Iterable[str] = (),
+        intermediate_path: str | None = None,
+    ) -> SemanticIndexResult:
+        room_items = list(rooms)
+        opening_items = list(opening_hosts)
+        adjacency_items = list(room_adjacencies)
+        binding_items = list(annotation_bindings)
+
+        with self.connection:
+            for table in (
+                "semantic_edges",
+                "semantic_nodes",
+                "rooms",
+                "opening_hosts",
+                "room_adjacencies",
+                "annotation_bindings",
+            ):
+                self.connection.execute(f"DELETE FROM {table} WHERE drawing_id = ?", (drawing_id,))
+
+            self.connection.executemany(
+                """
+                INSERT INTO semantic_nodes(drawing_id, node_id, kind, attributes_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (drawing_id, node.node_id, node.kind.value, _json(node.attributes))
+                    for node in graph.nodes
+                ],
+            )
+            self.connection.executemany(
+                """
+                INSERT INTO semantic_edges(drawing_id, source, target, kind, attributes_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        drawing_id,
+                        edge.source,
+                        edge.target,
+                        edge.kind.value,
+                        _json(edge.attributes),
+                    )
+                    for edge in graph.edges
+                ],
+            )
+            self.connection.executemany(
+                """
+                INSERT INTO rooms(
+                    drawing_id, room_id, area, polygon_json, boundary_handles_json
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        drawing_id,
+                        room.room_id,
+                        room.area,
+                        _json(room.polygon),
+                        _json(room.boundary_handles),
+                    )
+                    for room in room_items
+                ],
+            )
+            self.connection.executemany(
+                """
+                INSERT INTO opening_hosts(
+                    drawing_id, opening_handle, wall_handle, semantic, distance, anchor_json
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        drawing_id,
+                        relation.opening_handle,
+                        relation.wall_handle,
+                        relation.opening_semantic.value,
+                        relation.distance,
+                        _json(relation.anchor),
+                    )
+                    for relation in opening_items
+                ],
+            )
+            self.connection.executemany(
+                """
+                INSERT INTO room_adjacencies(drawing_id, room_a, room_b, shared_length)
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (drawing_id, item.room_a, item.room_b, item.shared_length)
+                    for item in adjacency_items
+                ],
+            )
+            self.connection.executemany(
+                """
+                INSERT INTO annotation_bindings(
+                    drawing_id, annotation_handle, target_handles_json, source
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (
+                        drawing_id,
+                        binding.annotation_handle,
+                        _json(binding.target_handles),
+                        binding.source,
+                    )
+                    for binding in binding_items
+                ],
+            )
+            if extraction_lane is not None:
+                entity_count = self._count("entities", drawing_id)
+                self.connection.execute(
+                    """
+                    INSERT INTO extraction_runs(
+                        drawing_id, lane, entity_count, snapshot_digest,
+                        warnings_json, intermediate_path
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        drawing_id,
+                        extraction_lane,
+                        entity_count,
+                        snapshot_digest,
+                        _json(tuple(warnings)),
+                        intermediate_path,
+                    ),
+                )
+
+        return SemanticIndexResult(
+            drawing_id=drawing_id,
+            node_count=len(graph.nodes),
+            edge_count=len(graph.edges),
+            room_count=len(room_items),
+            opening_host_count=len(opening_items),
+            room_adjacency_count=len(adjacency_items),
+            annotation_binding_count=len(binding_items),
+        )
+
+    def semantic_summary(self, path: str) -> SemanticSummary | None:
+        row = self.connection.execute(
+            "SELECT id FROM drawings WHERE path = ?",
+            (path,),
+        ).fetchone()
+        if row is None:
+            return None
+        drawing_id = int(row["id"])
+        latest = self.connection.execute(
+            """
+            SELECT lane, snapshot_digest
+            FROM extraction_runs
+            WHERE drawing_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (drawing_id,),
+        ).fetchone()
+        return SemanticSummary(
+            path=path,
+            node_count=self._count("semantic_nodes", drawing_id),
+            edge_count=self._count("semantic_edges", drawing_id),
+            room_count=self._count("rooms", drawing_id),
+            opening_host_count=self._count("opening_hosts", drawing_id),
+            room_adjacency_count=self._count("room_adjacencies", drawing_id),
+            annotation_binding_count=self._count("annotation_bindings", drawing_id),
+            extraction_lane=str(latest["lane"]) if latest is not None else None,
+            snapshot_digest=(
+                str(latest["snapshot_digest"])
+                if latest is not None and latest["snapshot_digest"] is not None
+                else None
+            ),
+        )
+
     def changed_records(self, manifest: InventoryManifest) -> list[FileRecord]:
         changed: list[FileRecord] = []
         for record in manifest.records:
@@ -198,7 +409,17 @@ class ProjectIndex:
         return [ReferenceRecord(**dict(row)) for row in rows]
 
     def _count(self, table: str, drawing_id: int) -> int:
-        if table not in {"entities", "refs"}:
+        allowed = {
+            "entities",
+            "refs",
+            "semantic_nodes",
+            "semantic_edges",
+            "rooms",
+            "opening_hosts",
+            "room_adjacencies",
+            "annotation_bindings",
+        }
+        if table not in allowed:
             raise ValueError("unsupported table")
         row = self.connection.execute(
             f"SELECT COUNT(*) AS count FROM {table} WHERE drawing_id = ?",
@@ -240,9 +461,68 @@ class ProjectIndex:
                 name TEXT,
                 target_path TEXT
             );
+            CREATE TABLE IF NOT EXISTS semantic_nodes(
+                drawing_id INTEGER NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+                node_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                attributes_json TEXT NOT NULL,
+                PRIMARY KEY(drawing_id, node_id)
+            );
+            CREATE TABLE IF NOT EXISTS semantic_edges(
+                id INTEGER PRIMARY KEY,
+                drawing_id INTEGER NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+                source TEXT NOT NULL,
+                target TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                attributes_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS rooms(
+                drawing_id INTEGER NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+                room_id TEXT NOT NULL,
+                area REAL NOT NULL,
+                polygon_json TEXT NOT NULL,
+                boundary_handles_json TEXT NOT NULL,
+                PRIMARY KEY(drawing_id, room_id)
+            );
+            CREATE TABLE IF NOT EXISTS opening_hosts(
+                drawing_id INTEGER NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+                opening_handle TEXT NOT NULL,
+                wall_handle TEXT NOT NULL,
+                semantic TEXT NOT NULL,
+                distance REAL NOT NULL,
+                anchor_json TEXT NOT NULL,
+                PRIMARY KEY(drawing_id, opening_handle)
+            );
+            CREATE TABLE IF NOT EXISTS room_adjacencies(
+                drawing_id INTEGER NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+                room_a TEXT NOT NULL,
+                room_b TEXT NOT NULL,
+                shared_length REAL NOT NULL,
+                PRIMARY KEY(drawing_id, room_a, room_b)
+            );
+            CREATE TABLE IF NOT EXISTS annotation_bindings(
+                drawing_id INTEGER NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+                annotation_handle TEXT NOT NULL,
+                target_handles_json TEXT NOT NULL,
+                source TEXT NOT NULL,
+                PRIMARY KEY(drawing_id, annotation_handle)
+            );
+            CREATE TABLE IF NOT EXISTS extraction_runs(
+                id INTEGER PRIMARY KEY,
+                drawing_id INTEGER NOT NULL REFERENCES drawings(id) ON DELETE CASCADE,
+                lane TEXT NOT NULL,
+                entity_count INTEGER NOT NULL,
+                snapshot_digest TEXT,
+                warnings_json TEXT NOT NULL,
+                intermediate_path TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE INDEX IF NOT EXISTS idx_entities_layer ON entities(layer);
             CREATE INDEX IF NOT EXISTS idx_refs_kind_name ON refs(kind, name);
             CREATE INDEX IF NOT EXISTS idx_refs_target_path ON refs(target_path);
+            CREATE INDEX IF NOT EXISTS idx_semantic_edges_kind ON semantic_edges(kind);
+            CREATE INDEX IF NOT EXISTS idx_opening_hosts_wall ON opening_hosts(wall_handle);
+            CREATE INDEX IF NOT EXISTS idx_extraction_runs_drawing ON extraction_runs(drawing_id, id);
             """
         )
 
