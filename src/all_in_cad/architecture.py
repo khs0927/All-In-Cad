@@ -243,7 +243,7 @@ def _signed_area(points: list[Point2D]) -> float:
 
 
 def _entity_anchor(entity: EntitySnapshot) -> Point2D | None:
-    for key in ("insertion_point", "position", "center"):
+    for key in ("insertion_point", "insert", "position", "center"):
         point = _point2(entity.geometry.get(key))
         if point is not None:
             return point
