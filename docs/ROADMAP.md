@@ -13,36 +13,57 @@
 
 ## Phase 1 — live host bring-up
 
+These items require the Windows CAD host and are intentionally not simulated in CI.
+
 - [ ] AutoCAD 2027: enable Autodesk Assistant Tech Preview and verify official MCP endpoint.
 - [ ] AutoCAD 2027: install/test `bimwright/dwg-mcp` 2027 shell.
 - [ ] AutoCAD 2027: load All-In-Cad .NET 10 plugin and pass Named Pipe ping/context tests.
 - [ ] AutoCAD 2027: load PyRx 26.0 and run the common capability matrix.
 - [ ] ZWCAD 2026: load PyRx ZRX loader and run the same capability matrix.
-- [ ] ZWCAD 2026: compile/load ZRX.NET adapter scaffold.
+- [ ] ZWCAD 2026: resolve installed ZRX.NET assemblies and compile/load the native adapter.
 - [ ] ZWCAD 2026: install LISP/File-IPC fallback and mark capability gaps.
 
 ## Phase 2 — guarded writes
 
-- [ ] Named Pipe protocol with current-user ACL and optional session token.
-- [ ] document_id + revision events + idempotency journal.
-- [ ] create/move/copy/rotate/scale/offset/erase primitives.
-- [ ] layer/block/text/dimension primitives.
-- [ ] requested/actual/diff readback.
-- [ ] approval token and one-document write lease.
+Host-independent work is completed first; CAD-specific execution remains live-host work.
+
+- [x] Host-neutral RPC envelope and 4-byte little-endian framing.
+- [x] 8 MiB fail-closed frame limit.
+- [x] Shared .NET 10 current-user-only Named Pipe server.
+- [x] Session-token gate and host-neutral worker dispatcher.
+- [x] document revision events and idempotency journal.
+- [x] approval token and one-document write lease.
+- [x] create/move/copy/rotate/scale/offset/erase operation contracts.
+- [x] layer/block/text/dimension operation contracts.
+- [x] normalized native snapshot and requested/actual diff model.
+- [ ] Bind shared Named Pipe worker to AutoCAD 2027 document/database APIs.
+- [ ] Bind shared Named Pipe worker to ZWCAD 2026 ZRX.NET APIs.
+- [ ] Execute v1 primitives in real native transactions on both hosts.
+- [ ] Capture native post-commit readback from both hosts.
 
 ## Phase 3 — architectural semantic graph
 
-- [ ] DWG/DXF census and normalized entity IR.
-- [ ] snapping/intersection topology graph.
+- [x] Host-neutral semantic graph data model and relation primitives.
+- [x] Initial layer-aware graph construction contracts.
+- [ ] Real DWG/DXF census into normalized entity IR.
+- [ ] snapping/intersection topology extraction from actual drawings.
 - [ ] wall pairing/thickness inference.
 - [ ] door/window openings and host-wall relations.
 - [ ] room/zone closure and adjacency.
 - [ ] dimensions and annotation bindings.
-- [ ] visual/DXF/native cross-check.
+- [ ] visual/DXF/native cross-check on live fixtures.
 
 ## Phase 4 — project-scale indexing
 
-- [ ] offline `Z:\\` DWG inventory.
-- [ ] ACadSharp/ODA/ezdxf extraction lanes with provenance.
+- [x] Offline DWG inventory model and extraction-lane planner.
+- [x] ACadSharp/ODA/ezdxf provenance contracts.
+- [ ] Run inventory against the real `Z:\\` drawing tree.
+- [ ] Wire installed ODA/ACadSharp/ezdxf executors.
 - [ ] drawing-level graph database and incremental re-index.
 - [ ] cross-file blocks/xrefs/symbol relationships.
+
+## Continuous maintenance
+
+- [x] Upstream pins are machine-validated in core CI.
+- [x] Weekly/manual GitHub Action checks pinned commits against current upstream heads.
+- [ ] Review upstream audit artifacts before intentionally advancing a pin.

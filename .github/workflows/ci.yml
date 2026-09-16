@@ -15,12 +15,14 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
-      - run: ruff check src tests
+      - run: ruff check src tests scripts
       - run: pytest
       - name: Validate upstream lock JSON
         run: python -m json.tool upstream/upstream.lock.json > /dev/null
       - name: Validate layer config JSON
         run: python -m json.tool configs/architectural-layers.json > /dev/null
+      - name: Validate upstream pin structure
+        run: python scripts/upstream/check_pins.py
 
   native-protocol:
     runs-on: ubuntu-latest
