@@ -50,7 +50,9 @@ Host-independent work is completed first; CAD-specific execution remains live-ho
 - [x] Door/window nearest-host-wall relation baseline.
 - [x] Room bounded-face extraction and shared-wall adjacency baseline.
 - [x] Explicit dimension/annotation target binding contract.
-- [ ] Real DWG/DXF census into normalized entity IR.
+- [x] Executable DWG/DXF extraction into normalized `EntitySnapshot` IR.
+- [x] Persist semantic graph, room, opening-host and annotation relations in project index.
+- [ ] Validate normalized census against representative real DWG/DXF drawings.
 - [ ] Tune topology gap healing, tolerances, arcs, and bulges against real drawings.
 - [ ] Measure wall/opening/room precision and recall on representative fixtures.
 - [ ] visual/DXF/native cross-check on live fixtures.
@@ -58,14 +60,16 @@ Host-independent work is completed first; CAD-specific execution remains live-ho
 ## Phase 4 — project-scale indexing
 
 - [x] Offline DWG inventory model and extraction-lane planner.
-- [x] ACadSharp/ODA/ezdxf provenance contracts.
+- [x] ACadSharp/ODA/ezdxf/LibreDWG provenance contracts.
 - [x] SQLite drawing/entity index with incremental file fingerprints.
 - [x] Transactional re-index of changed drawing entities/references.
 - [x] Conservative cross-file block/xref relationship queries.
+- [x] Executable ACadSharp/ODA/LibreDWG/ezdxf extraction adapters.
+- [x] Changed-only extraction → semantic analysis → SQLite indexing pipeline.
+- [x] Persist extraction lane, warnings and snapshot digest as evidence provenance.
 - [ ] Run inventory against the real `Z:\\` drawing tree.
-- [ ] Wire installed ODA/ACadSharp/ezdxf executors.
 - [ ] Add spatial/indexing acceleration after real project benchmarks.
-- [ ] Persist semantic graph/room relations after normalization is validated.
+- [ ] Add sidecar PDF/vector evidence ingestion after real drawing normalization is validated.
 
 ## Continuous maintenance
 
