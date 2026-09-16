@@ -11,7 +11,7 @@ All-In-Cad is designed around one rule: an AI agent does not get to call a CAD c
 - **PyRx** is evaluated first as the common ObjectARX/ZRX native bridge and stays an external LGPL dependency.
 - **ZRX.NET + Fs.Fox.CAD** provide the managed ZWCAD path where native Python binding coverage is insufficient.
 - **ZWCAD-MCP LISP/File-IPC** remains a fallback, not the primary execution architecture.
-- **ezdxf** provides an independent DXF evidence lane.
+- **ACadSharp → ODA → LibreDWG → ezdxf** form the unopened-drawing extraction/evidence lanes.
 
 ## Runtime flow
 
@@ -30,7 +30,7 @@ All-In-Cad control plane
       +--> AutoCAD 2027 native ------ .NET 10 / ObjectARX / Named Pipe
       +--> ZWCAD 2026 native -------- PyRx/ZRX and ZRX.NET
       +--> ZWCAD LISP fallback ------ compatibility only
-      +--> ezdxf -------------------- independent file verification
+      +--> headless extraction ------- ACadSharp / ODA / LibreDWG / ezdxf
 ```
 
 ## Current bootstrap
@@ -42,19 +42,53 @@ The repository now contains:
 - the architectural layer semantic baseline (`COL`, `WAL1/2/3`, `ELE`, `DOOR*`, `WIN*`, `STAIR`, `DIM*`, `CEN*`);
 - pinned upstream research with explicit license/integration policy;
 - AutoCAD 2027 and ZWCAD 2026 native project scaffolds;
+- executable headless DWG/DXF extraction and normalized `EntitySnapshot` IR;
+- changed-only extraction → semantic graph/room/opening inference → SQLite indexing;
+- extraction provenance, snapshot digests and semantic relations persisted in the project index;
 - Windows doctor/benchmark scripts;
 - host-independent CI and tests.
 
-See `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `upstream/upstream.lock.json`.
+See `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/HEADLESS_PIPELINE.md`, and `upstream/upstream.lock.json`.
 
 ## Local core test
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,headless]"
 pytest
 ```
+
+## Headless indexing
+
+Check available extraction lanes:
+
+```powershell
+all-in-cad doctor
+```
+
+Incrementally index a drawing tree without opening AutoCAD/ZWCAD:
+
+```powershell
+all-in-cad index `
+  --root "Z:\" `
+  --db ".aic\project.sqlite3" `
+  --workdir ".aic\work"
+```
+
+For ACadSharp direct-DWG parsing, point the runtime at the built probe:
+
+```powershell
+$env:AIC_ACADSHARP_PROBE = "C:\path\to\AllInCad.ACadSharpProbe.dll"
+```
+
+LibreDWG remains an external GPL executable boundary:
+
+```powershell
+$env:AIC_LIBREDWG_DWG2DXF = "C:\path\to\dwg2dxf.exe"
+```
+
+ODA File Converter is detected through `ezdxf.addons.odafc.is_installed()` and can be configured through ezdxf's `odafc-addon` executable-path settings. Original DWG/DXF files are never modified by the headless indexing pipeline.
 
 ## Windows CAD bring-up
 

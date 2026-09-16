@@ -12,6 +12,9 @@ dependencies = [
   "pydantic>=2.9,<3",
 ]
 
+[project.scripts]
+all-in-cad = "all_in_cad.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3",
