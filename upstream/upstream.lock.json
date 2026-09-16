@@ -1,6 +1,6 @@
 {
   "reviewed_at": "2026-09-16",
-  "policy": "Pin reviewed upstream commits. Vendor only permissively licensed code after file-level review; keep LGPL code external.",
+  "policy": "Pin reviewed upstream commits. Vendor only permissively licensed code after file-level review; keep LGPL/GPL code external. Reference-only projects are never copied until license and file provenance are reviewed.",
   "projects": [
     {"repo":"bimwright/dwg-mcp","commit":"c04af1ff5ae36f0851ed928c3c3b0766cd36b71a","license":"Apache-2.0","integration":"reference-and-adapt","use":["AutoCAD 2027 shell","Named Pipe transport","target discovery","handle-based tools"]},
     {"repo":"CEXT-Dan/PyRx","commit":"8f102b2b06203d39fd8bf2fc966dbb7bce6bc45d","license":"LGPL-3.0","integration":"external-dependency","use":["ObjectARX/ZRX Python binding","AutoCAD/ZWCAD common native experiments"]},
@@ -9,10 +9,19 @@
     {"repo":"LokmenoWer/best-cad-mcp","commit":"0801ade2260195a5399fa5027ee925b72fc3e259","license":"MIT","integration":"reference-and-adapt","use":["CADPlan","CAD-IR","dry-run workflow","semantic graph","visual evidence"]},
     {"repo":"jeremylongshore/cad-ai-agent","commit":"0866c8e8a5bc8c4f820d4b074bcc09c34d9c85be","license":"Apache-2.0","integration":"reference-and-adapt","use":["typed ChangeSet","protected layers","revision comparison","AEC analysis"]},
     {"repo":"dalingo81/ZWCAD-MCP","commit":"49883a983e665900bbc37b9f200daf99144818e1","license":"MIT","integration":"fallback-adapter-reference","use":["ZWCAD 2026 LISP/File IPC fallback","window dispatch quirks","screenshot fallback"]},
-    {"repo":"mozman/ezdxf","commit":"d6f2ac10caeddc712ed1824aaeb3b9c050de4a04","license":"MIT","integration":"python-dependency","use":["independent DXF census","geometry verification","headless rendering"]}
+    {"repo":"mozman/ezdxf","commit":"d6f2ac10caeddc712ed1824aaeb3b9c050de4a04","license":"MIT","integration":"python-dependency","use":["independent DXF census","geometry verification","headless rendering","recover.readfile audit lane"]},
+    {"repo":"DomCR/ACadSharp","commit":"3feabba4b2cbcb226f10b288aaee32442b03af6f","license":"MIT","integration":"dotnet-dependency-or-adapt","use":["primary headless DWG direct parser","block/layer/entity census","DWG-to-semantic-IR lane"]},
+    {"repo":"LibreDWG/libredwg","commit":"34f02f54b9aacb5708c1d3d2070efb3e4b2d8c43","license":"GPL-3.0","integration":"external-executable-only","use":["dwg2dxf emergency fallback","independent conversion cross-check"]},
+    {"repo":"U-C4N/Autocad-MCP","commit":"abc2a82e7128358b9e228a7d9442b37019aa3fe5","license":"MIT","integration":"reference-and-test-oracle","use":["large AutoCAD tool coverage","COM/headless parity patterns","GD&T and dimension validation","adversarial correctness gates"]},
+    {"repo":"AnCode666/multiCAD-mcp","commit":"360ec77c970ec95a962bd4d0a3238715ee78dd7c","license":"Apache-2.0","integration":"reference-and-compatibility-matrix","use":["AutoCAD/ZWCAD command coverage","cross-CAD routing patterns","table and annotation compatibility"]},
+    {"repo":"puran-water/autocad-mcp","commit":"95476a33a1c246308326eb4709d6379ef2efdbc1","license":"MIT","integration":"fallback-reference","use":["File IPC patterns","focus-free dispatch","AutoLISP fallback","undo/redo compatibility"]},
+    {"repo":"Psalmustrack/lambdacad-mcp","commit":"454c80416c01338048515dd18cfc1d82d9742d4b","license":"Apache-2.0","integration":"reference-and-coverage-oracle","use":["AutoLISP-capable CAD portability","broad tool inventory","drawing graph and design-review ideas"]}
   ],
   "reference_only": [
     {"repo":"A-SHOJAEI/ConstructDrawingAI","reason":"Useful CIR/connectivity ideas but GitHub license metadata is NOASSERTION; do not copy code until license is resolved."},
     {"repo":"Jovinull/cad-preproc","reason":"Topology and layer-semantic pipeline reference; perform license review before copying code."}
+  ],
+  "non_open_source_external_tools": [
+    {"name":"ODA File Converter","integration":"external-tool-only","reason":"Useful DWG-to-DXF conversion fallback, but it is not part of the open-source upstream set and must not be vendored."}
   ]
 }
