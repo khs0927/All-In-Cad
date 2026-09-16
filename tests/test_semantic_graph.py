@@ -1,5 +1,5 @@
 from all_in_cad.readback import EntitySnapshot
-from all_in_cad.semantic_graph import EdgeKind, build_semantic_graph
+from all_in_cad.semantic_graph import EdgeKind, NodeKind, build_semantic_graph
 
 
 def line(
@@ -42,3 +42,23 @@ def test_orthogonal_wall_is_not_paired() -> None:
         [line("A", [0, 0], [3000, 0]), line("B", [1500, -1000], [1500, 1000])]
     )
     assert graph.edges_of_kind(EdgeKind.WALL_PAIR) == []
+
+
+def test_lwpolyline_width_and_bulge_payload_still_produces_vertices() -> None:
+    polyline = EntitySnapshot(
+        document_id="doc",
+        handle="P1",
+        entity_type="LWPOLYLINE",
+        layer="WAL1",
+        geometry={
+            "points": [
+                [0.0, 0.0, 0.0, 0.0, 0.0],
+                [1000.0, 0.0, 0.0, 0.0, 0.25],
+                [1000.0, 1000.0, 0.0, 0.0, 0.0],
+            ],
+            "closed": False,
+        },
+    )
+    graph = build_semantic_graph([polyline], snap_tolerance=1.0)
+    vertices = [node for node in graph.nodes if node.kind == NodeKind.VERTEX]
+    assert len(vertices) == 3
