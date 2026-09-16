@@ -45,22 +45,27 @@ Host-independent work is completed first; CAD-specific execution remains live-ho
 
 - [x] Host-neutral semantic graph data model and relation primitives.
 - [x] Initial layer-aware graph construction contracts.
+- [x] Deterministic 2D snapping/intersection noding baseline.
+- [x] Wall pairing/thickness candidate inference baseline.
+- [x] Door/window nearest-host-wall relation baseline.
+- [x] Room bounded-face extraction and shared-wall adjacency baseline.
+- [x] Explicit dimension/annotation target binding contract.
 - [ ] Real DWG/DXF census into normalized entity IR.
-- [ ] snapping/intersection topology extraction from actual drawings.
-- [ ] wall pairing/thickness inference.
-- [ ] door/window openings and host-wall relations.
-- [ ] room/zone closure and adjacency.
-- [ ] dimensions and annotation bindings.
+- [ ] Tune topology gap healing, tolerances, arcs, and bulges against real drawings.
+- [ ] Measure wall/opening/room precision and recall on representative fixtures.
 - [ ] visual/DXF/native cross-check on live fixtures.
 
 ## Phase 4 — project-scale indexing
 
 - [x] Offline DWG inventory model and extraction-lane planner.
 - [x] ACadSharp/ODA/ezdxf provenance contracts.
+- [x] SQLite drawing/entity index with incremental file fingerprints.
+- [x] Transactional re-index of changed drawing entities/references.
+- [x] Conservative cross-file block/xref relationship queries.
 - [ ] Run inventory against the real `Z:\\` drawing tree.
 - [ ] Wire installed ODA/ACadSharp/ezdxf executors.
-- [ ] drawing-level graph database and incremental re-index.
-- [ ] cross-file blocks/xrefs/symbol relationships.
+- [ ] Add spatial/indexing acceleration after real project benchmarks.
+- [ ] Persist semantic graph/room relations after normalization is validated.
 
 ## Continuous maintenance
 
