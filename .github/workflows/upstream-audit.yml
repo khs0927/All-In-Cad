@@ -25,7 +25,29 @@ jobs:
           python scripts/upstream/check_pins.py \
             --online \
             --json-output upstream-audit.json
+      - name: Record audit provenance
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("upstream-audit.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          payload["audit_provenance"] = {
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "source_sha": os.environ["GITHUB_SHA"],
+              "source_ref": os.environ["GITHUB_REF"],
+          }
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: upstream-audit
+          name: upstream-audit-${{ github.run_id }}-${{ github.run_attempt }}
           path: upstream-audit.json
+          if-no-files-found: error
+          retention-days: 90
