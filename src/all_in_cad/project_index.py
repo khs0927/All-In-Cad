@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from .inventory import FileRecord, InventoryManifest
 from .readback import EntitySnapshot
