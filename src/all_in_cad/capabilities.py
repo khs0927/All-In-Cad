@@ -5,6 +5,20 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+PYRX_READ_BASELINE = frozenset(
+    {
+        "document.database.read",
+        "document.modelspace.read",
+        "entity.line.type",
+        "entity.polyline.type",
+        "entity.block_reference.type",
+        "entity.text.type",
+        "entity.mtext.type",
+        "entity.dimension.type",
+        "table.layer.type",
+    }
+)
+
 
 class CapabilityState(StrEnum):
     SUPPORTED = "supported"
@@ -59,6 +73,15 @@ class CapabilityMatrix(BaseModel):
 
     columns: tuple[str, ...]
     rows: tuple[CapabilityMatrixRow, ...]
+
+
+def normalize_probe_payload(payload: dict[str, Any]) -> CapabilityReport:
+    schema = str(payload.get("schema") or "")
+    if schema == "all-in-cad/pyrx-probe/v1" or "db_types" in payload:
+        return normalize_pyrx_report(payload)
+    if payload.get("adapter") == "acadsharp" or "reader" in payload:
+        return normalize_acadsharp_capabilities(payload)
+    raise ValueError("unrecognized capability probe payload")
 
 
 def normalize_pyrx_report(payload: dict[str, Any]) -> CapabilityReport:
@@ -181,7 +204,7 @@ def build_capability_matrix(reports: list[CapabilityReport]) -> CapabilityMatrix
 
 def capability_gaps(
     report: CapabilityReport,
-    required: set[str],
+    required: set[str] | frozenset[str],
 ) -> dict[str, CapabilityState]:
     return {
         capability: report.state(capability)
