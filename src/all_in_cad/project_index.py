@@ -522,7 +522,8 @@ class ProjectIndex:
             CREATE INDEX IF NOT EXISTS idx_refs_target_path ON refs(target_path);
             CREATE INDEX IF NOT EXISTS idx_semantic_edges_kind ON semantic_edges(kind);
             CREATE INDEX IF NOT EXISTS idx_opening_hosts_wall ON opening_hosts(wall_handle);
-            CREATE INDEX IF NOT EXISTS idx_extraction_runs_drawing ON extraction_runs(drawing_id, id);
+            CREATE INDEX IF NOT EXISTS idx_extraction_runs_drawing
+            ON extraction_runs(drawing_id, id);
             """
         )
 
