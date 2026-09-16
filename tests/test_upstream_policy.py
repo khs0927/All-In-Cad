@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
-from scripts.upstream.check_pins import AuditError, load_lock
+
+def _load_check_pins() -> ModuleType:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "upstream" / "check_pins.py"
+    spec = importlib.util.spec_from_file_location("all_in_cad_check_pins", script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load upstream policy checker: {script}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_CHECK_PINS = _load_check_pins()
+AuditError = _CHECK_PINS.AuditError
+load_lock = _CHECK_PINS.load_lock
 
 
 def _write_lock(tmp_path: Path, projects: list[dict[str, object]]) -> Path:
@@ -27,7 +42,8 @@ def _project(**overrides: object) -> dict[str, object]:
 
 
 def test_repository_lock_passes_policy_validation() -> None:
-    lock = load_lock(Path("upstream/upstream.lock.json"))
+    root = Path(__file__).resolve().parents[1]
+    lock = load_lock(root / "upstream" / "upstream.lock.json")
     assert len(lock["projects"]) >= 1
 
 
