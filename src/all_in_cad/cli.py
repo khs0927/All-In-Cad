@@ -6,6 +6,13 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from .benchmark import run_synthetic_dxf_benchmark
+from .capabilities import (
+    PYRX_READ_BASELINE,
+    build_capability_matrix,
+    capability_gaps,
+    normalize_probe_payload,
+)
 from .inventory import build_inventory
 from .pipeline import process_manifest
 from .project_index import ProjectIndex
@@ -30,16 +37,67 @@ def main(argv: Sequence[str] | None = None) -> int:
     index_parser.add_argument("--fail-fast", action="store_true")
     _add_probe_arguments(index_parser)
 
+    matrix_parser = subparsers.add_parser(
+        "capability-matrix",
+        help="normalize and compare PyRx/ACadSharp probe JSON reports",
+    )
+    matrix_parser.add_argument("--report", action="append", required=True)
+
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="run a reproducible synthetic headless DXF workload",
+    )
+    benchmark_parser.add_argument("--workdir", required=True)
+    benchmark_parser.add_argument("--entities", type=int, default=1000)
+
     args = parser.parse_args(argv)
+
+    if args.command == "capability-matrix":
+        return _run_capability_matrix(args.report)
+    if args.command == "benchmark":
+        result = run_synthetic_dxf_benchmark(args.workdir, entity_count=args.entities)
+        print(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
+        return 0
+
     probes = detect_tool_probes(
         acadsharp_executable=args.acadsharp_probe,
         libredwg_executable=args.libredwg,
     )
-
     if args.command == "doctor":
         print(json.dumps(capability_report(probes), indent=2, sort_keys=True))
         return 0
 
+    return _run_index(args, probes)
+
+
+def _run_capability_matrix(paths: list[str]) -> int:
+    reports = []
+    for raw_path in paths:
+        path = Path(raw_path).expanduser().resolve()
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"probe report must be a JSON object: {path}")
+        reports.append(normalize_probe_payload(payload))
+
+    matrix = build_capability_matrix(reports)
+    baseline_gaps = {
+        f"{report.adapter}@{report.host}": {
+            capability: state.value
+            for capability, state in capability_gaps(report, PYRX_READ_BASELINE).items()
+        }
+        for report in reports
+        if report.adapter == "pyrx"
+    }
+    output = {
+        "reports": [report.model_dump(mode="json") for report in reports],
+        "matrix": matrix.model_dump(mode="json"),
+        "pyrx_read_baseline_gaps": baseline_gaps,
+    }
+    print(json.dumps(output, indent=2, sort_keys=True))
+    return 0
+
+
+def _run_index(args: argparse.Namespace, probes: dict) -> int:
     manifest = build_inventory(args.root, compute_hash=args.compute_hash)
     db_path = Path(args.db).expanduser().resolve()
     db_path.parent.mkdir(parents=True, exist_ok=True)
