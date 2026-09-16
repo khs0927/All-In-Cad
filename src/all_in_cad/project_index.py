@@ -163,13 +163,16 @@ class ProjectIndex:
         return changed
 
     def block_usages(self, name: str) -> list[ReferenceRecord]:
-        return self._reference_query("kind = 'block' AND lower(name) = lower(?)", (name,))
+        return self._reference_query(
+            "r.kind = 'block' AND lower(r.name) = lower(?)",
+            (name,),
+        )
 
     def xrefs(self, target_path: str | None = None) -> list[ReferenceRecord]:
         if target_path is None:
-            return self._reference_query("kind = 'xref'", ())
+            return self._reference_query("r.kind = 'xref'", ())
         return self._reference_query(
-            "kind = 'xref' AND lower(target_path) = lower(?)",
+            "r.kind = 'xref' AND lower(r.target_path) = lower(?)",
             (target_path,),
         )
 
