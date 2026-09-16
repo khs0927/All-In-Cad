@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from .readback import EntitySnapshot
 from .semantic_layers import LayerSemantic, classify_layer
@@ -55,7 +55,7 @@ def segments_from_entities(
         if not isinstance(raw_points, list):
             continue
         points = [point for item in raw_points if (point := _point2(item)) is not None]
-        for left, right in zip(points, points[1:]):
+        for left, right in zip(points, points[1:], strict=False):
             if left != right:
                 segments.append(Segment2D(handle, left, right))
         if entity.geometry.get("closed") is True and len(points) > 2 and points[-1] != points[0]:
@@ -92,9 +92,9 @@ def node_segments(
                 split_points[right_index].add(point)
 
     merged: dict[tuple[Point2D, Point2D], set[str]] = {}
-    for segment, points in zip(original, split_points):
+    for segment, points in zip(original, split_points, strict=False):
         ordered = sorted(points, key=lambda point: _parameter(segment, point))
-        for start, end in zip(ordered, ordered[1:]):
+        for start, end in zip(ordered, ordered[1:], strict=False):
             if _distance(start, end) <= tolerance * 0.5:
                 continue
             key = tuple(sorted((start, end)))
@@ -122,7 +122,12 @@ def _segment_intersections(
     cross_rs = _cross(r, s)
     q_minus_p = Point2D(q.x - p.x, q.y - p.y)
     cross_qp_r = _cross(q_minus_p, r)
-    epsilon = tolerance * max(1.0, _distance(left.start, left.end), _distance(right.start, right.end))
+    maximum_length = max(
+        1.0,
+        _distance(left.start, left.end),
+        _distance(right.start, right.end),
+    )
+    epsilon = tolerance * maximum_length
 
     if abs(cross_rs) <= epsilon:
         if abs(cross_qp_r) > epsilon:
