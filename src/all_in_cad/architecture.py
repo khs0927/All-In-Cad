@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -109,13 +110,15 @@ def infer_rooms(
 
 
 def infer_room_adjacency(rooms: Iterable[RoomCandidate]) -> list[RoomAdjacency]:
-    edge_rooms: dict[tuple[tuple[float, float], tuple[float, float]], list[str]] = defaultdict(
-        list
-    )
-    edge_lengths: dict[tuple[tuple[float, float], tuple[float, float]], float] = {}
+    edge_rooms: dict[
+        tuple[tuple[float, float], tuple[float, float]], list[str]
+    ] = defaultdict(list)
+    edge_lengths: dict[
+        tuple[tuple[float, float], tuple[float, float]], float
+    ] = {}
     for room in rooms:
         points = list(room.polygon)
-        for start, end in zip(points, points[1:] + points[:1]):
+        for start, end in zip(points, points[1:] + points[:1], strict=False):
             key = tuple(sorted((start, end)))
             edge_rooms[key].append(room.room_id)
             edge_lengths[key] = math.dist(start, end)
@@ -180,7 +183,9 @@ def _positive_faces(
         for right in neighbors
     )
     visited: set[tuple[Point2D, Point2D]] = set()
-    faces: dict[tuple[Point2D, ...], tuple[list[Point2D], float, set[str]]] = {}
+    faces: dict[
+        tuple[Point2D, ...], tuple[list[Point2D], float, set[str]]
+    ] = {}
 
     for start in directed:
         if start in visited:
@@ -193,7 +198,7 @@ def _positive_faces(
             continue
         key = _canonical_polygon(cycle)
         handles: set[str] = set()
-        for left, right in zip(cycle, cycle[1:] + cycle[:1]):
+        for left, right in zip(cycle, cycle[1:] + cycle[:1], strict=False):
             handles.update(edge_handles[tuple(sorted((left, right)))])
         faces[key] = (cycle, area, handles)
 
@@ -233,7 +238,7 @@ def _canonical_polygon(points: list[Point2D]) -> tuple[Point2D, ...]:
 def _signed_area(points: list[Point2D]) -> float:
     return 0.5 * sum(
         left.x * right.y - right.x * left.y
-        for left, right in zip(points, points[1:] + points[:1])
+        for left, right in zip(points, points[1:] + points[:1], strict=False)
     )
 
 
