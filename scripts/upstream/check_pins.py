@@ -12,10 +12,37 @@ from typing import Any
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 API_ROOT = "https://api.github.com"
+COPYLEFT_LICENSES = {"LGPL-3.0", "GPL-3.0"}
 
 
 class AuditError(RuntimeError):
     pass
+
+
+def _validate_project(project: dict[str, Any], seen: set[str]) -> None:
+    repo = project.get("repo")
+    commit = project.get("commit")
+    license_name = project.get("license")
+    integration = project.get("integration")
+    uses = project.get("use")
+
+    if not isinstance(repo, str) or repo.count("/") != 1:
+        raise AuditError(f"invalid repo name: {repo!r}")
+    if repo in seen:
+        raise AuditError(f"duplicate repo in lock: {repo}")
+    seen.add(repo)
+
+    if not isinstance(commit, str) or SHA_RE.fullmatch(commit) is None:
+        raise AuditError(f"invalid 40-character commit SHA for {repo}")
+    if not isinstance(license_name, str) or not license_name:
+        raise AuditError(f"missing license for {repo}")
+    if not isinstance(integration, str) or not integration:
+        raise AuditError(f"missing integration policy for {repo}")
+    if not isinstance(uses, list) or not uses or not all(isinstance(item, str) for item in uses):
+        raise AuditError(f"invalid use list for {repo}")
+
+    if license_name in COPYLEFT_LICENSES and "external" not in integration:
+        raise AuditError(f"copyleft dependency must remain external: {repo}")
 
 
 def load_lock(path: Path) -> dict[str, Any]:
@@ -26,15 +53,9 @@ def load_lock(path: Path) -> dict[str, Any]:
 
     seen: set[str] = set()
     for project in projects:
-        repo = project.get("repo")
-        commit = project.get("commit")
-        if not isinstance(repo, str) or repo.count("/") != 1:
-            raise AuditError(f"invalid repo name: {repo!r}")
-        if repo in seen:
-            raise AuditError(f"duplicate repo in lock: {repo}")
-        seen.add(repo)
-        if not isinstance(commit, str) or SHA_RE.fullmatch(commit) is None:
-            raise AuditError(f"invalid 40-character commit SHA for {repo}")
+        if not isinstance(project, dict):
+            raise AuditError("each project entry must be an object")
+        _validate_project(project, seen)
     return data
 
 
