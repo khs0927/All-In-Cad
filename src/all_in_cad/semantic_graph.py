@@ -144,7 +144,10 @@ def _entity_points(entity: EntitySnapshot) -> list[tuple[float, float, float]]:
     if isinstance(raw, list):
         points: list[tuple[float, float, float]] = []
         for item in raw:
-            point = _point3(item)
+            if entity.entity_type.upper() == "LWPOLYLINE":
+                point = _lwpolyline_point(item)
+            else:
+                point = _point3(item)
             if point is not None:
                 points.append(point)
         return points
@@ -170,6 +173,20 @@ def _point3(value: Any) -> tuple[float, float, float] | None:
     y = float(value[1])
     z = float(value[2]) if len(value) == 3 else 0.0
     return x, y, z
+
+
+def _lwpolyline_point(value: Any) -> tuple[float, float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    x, y = value[0], value[1]
+    if (
+        not isinstance(x, (int, float))
+        or isinstance(x, bool)
+        or not isinstance(y, (int, float))
+        or isinstance(y, bool)
+    ):
+        return None
+    return float(x), float(y), 0.0
 
 
 def _snap_key(point: tuple[float, float, float], tolerance: float) -> tuple[int, int, int]:
