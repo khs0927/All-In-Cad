@@ -1,9 +1,24 @@
+import importlib.util
 import json
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
-from scripts.upstream.check_pins import AuditError, load_lock
+
+def _load_audit_module() -> ModuleType:
+    script = Path(__file__).parents[1] / "scripts" / "upstream" / "check_pins.py"
+    spec = importlib.util.spec_from_file_location("aic_check_pins", script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load upstream audit script")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+audit = _load_audit_module()
+AuditError = audit.AuditError
+load_lock = audit.load_lock
 
 
 def write_lock(path: Path, projects: list[dict[str, str]]) -> None:
