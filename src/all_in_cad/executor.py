@@ -6,7 +6,13 @@ from typing import Protocol
 from .approval import ApprovalSigner, plan_digest
 from .journal import IdempotencyJournal
 from .lease import DocumentLeaseManager
-from .models import AdapterDescriptor, ChangePlan, DocumentRef, ExecutionReceipt, OperationResult
+from .models import (
+    AdapterDescriptor,
+    ChangePlan,
+    DocumentRef,
+    ExecutionReceipt,
+    OperationResult,
+)
 
 
 class ExecutionError(RuntimeError):
@@ -15,17 +21,31 @@ class ExecutionError(RuntimeError):
 
 class NativeAdapter(Protocol):
     descriptor: AdapterDescriptor
+
     def current_document(self) -> DocumentRef: ...
+
     def execute_atomic(self, plan: ChangePlan) -> ExecutionReceipt: ...
 
 
 class GuardedExecutor:
-    def __init__(self, *, signer: ApprovalSigner, leases: DocumentLeaseManager, journal: IdempotencyJournal) -> None:
+    def __init__(
+        self,
+        *,
+        signer: ApprovalSigner,
+        leases: DocumentLeaseManager,
+        journal: IdempotencyJournal,
+    ) -> None:
         self._signer = signer
         self._leases = leases
         self._journal = journal
 
-    def execute(self, plan: ChangePlan, *, adapter: NativeAdapter, approval_token: str) -> ExecutionReceipt:
+    def execute(
+        self,
+        plan: ChangePlan,
+        *,
+        adapter: NativeAdapter,
+        approval_token: str,
+    ) -> ExecutionReceipt:
         if not adapter.descriptor.supports("entity.write"):
             raise ExecutionError(f"adapter is not write-capable: {adapter.descriptor.adapter_id}")
         self._signer.verify(approval_token, plan)
@@ -45,6 +65,7 @@ class GuardedExecutor:
                 raise ExecutionError("active document id does not match plan")
             if current.revision != plan.expected_revision:
                 raise ExecutionError("active document revision is stale relative to plan")
+
             with self._leases.acquire(document_key, owner):
                 receipt = adapter.execute_atomic(plan)
                 if not receipt.committed:
@@ -80,9 +101,26 @@ class InMemoryNativeAdapter:
                 if operation.kind == "test.fail":
                     raise ExecutionError(f"forced failure at {operation.op_id}")
                 self.applied_operations.append(operation.op_id)
-                results.append(OperationResult(op_id=operation.op_id, status="ok", affected_handles=[target.handle for target in operation.targets]))
-            self._document = self._document.model_copy(update={"revision": before_document.revision + 1})
-            return ExecutionReceipt(plan_id=plan.plan_id, adapter_id=self.descriptor.adapter_id, document_id=plan.document.document_id, revision_before=before_document.revision, revision_after=self._document.revision, idempotency_key=plan.idempotency_key, committed=True, results=results)
+                results.append(
+                    OperationResult(
+                        op_id=operation.op_id,
+                        status="ok",
+                        affected_handles=[target.handle for target in operation.targets],
+                    )
+                )
+            self._document = self._document.model_copy(
+                update={"revision": before_document.revision + 1}
+            )
+            return ExecutionReceipt(
+                plan_id=plan.plan_id,
+                adapter_id=self.descriptor.adapter_id,
+                document_id=plan.document.document_id,
+                revision_before=before_document.revision,
+                revision_after=self._document.revision,
+                idempotency_key=plan.idempotency_key,
+                committed=True,
+                results=results,
+            )
         except Exception:
             self.applied_operations = before_operations
             self._document = before_document

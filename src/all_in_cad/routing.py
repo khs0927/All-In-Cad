@@ -10,7 +10,15 @@ class RoutingError(RuntimeError):
 
 
 class CapabilityRouter:
-    """Deterministic host routing."""
+    """Deterministic host routing.
+
+    Policy:
+    - AutoCAD Official MCP is preferred for read/analysis, never as the default writer.
+    - ZWCAD native is preferred for normal writes.
+    - AutoCAD native is the second native writer and is required for AutoCAD-specific work.
+    - ZWCAD LISP/File-IPC is a fallback, not the first writer.
+    - Independent verification prefers a channel different from the writer.
+    """
 
     def __init__(self, adapters: Iterable[AdapterDescriptor]):
         self._adapters = tuple(adapters)
@@ -44,7 +52,9 @@ class CapabilityRouter:
         candidates = self._candidates(capability)
         if required_host is not None:
             candidates = [a for a in candidates if a.host == required_host]
-        candidates = [a for a in candidates if a.channel != AdapterChannel.AUTODESK_OFFICIAL_MCP]
+        candidates = [
+            a for a in candidates if a.channel != AdapterChannel.AUTODESK_OFFICIAL_MCP
+        ]
         if not candidates:
             suffix = f" for {required_host}" if required_host else ""
             raise RoutingError(f"no approved write adapter provides {capability}{suffix}")
@@ -81,6 +91,7 @@ class CapabilityRouter:
         )
         if len(ordered) < minimum:
             raise RoutingError(
-                f"need {minimum} independent verifiers for writer={writer.adapter_id}; found {len(ordered)}"
+                f"need {minimum} independent verifiers for writer={writer.adapter_id}; "
+                f"found {len(ordered)}"
             )
         return tuple(ordered[:minimum])
