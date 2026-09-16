@@ -53,3 +53,50 @@ def test_index_command_processes_dxf_and_then_skips_unchanged(tmp_path: Path, ca
     second = json.loads(capsys.readouterr().out)
     assert second["processed"] == []
     assert second["skipped"] == [str(drawing.resolve())]
+
+
+def test_capability_matrix_command_compares_two_pyrx_reports(tmp_path: Path, capsys) -> None:
+    reports = []
+    for host, hatch in (("autocad-2027", True), ("zwcad-2026", False)):
+        path = tmp_path / f"{host}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": "all-in-cad/pyrx-probe/v1",
+                    "host_label": host,
+                    "db_types": {
+                        "Line": True,
+                        "Polyline": True,
+                        "BlockReference": True,
+                        "DBText": True,
+                        "MText": True,
+                        "Dimension": True,
+                        "Hatch": hatch,
+                        "LayerTable": True,
+                    },
+                    "current_database": {"ok": True},
+                    "model_space": {"ok": True},
+                }
+            ),
+            encoding="utf-8",
+        )
+        reports.extend(["--report", str(path)])
+
+    assert main(["capability-matrix", *reports]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    rows = {row["capability"]: row for row in payload["matrix"]["rows"]}
+    assert rows["entity.line.type"]["common_supported"] is True
+    assert rows["entity.hatch.type"]["common_supported"] is False
+    assert payload["pyrx_read_baseline_gaps"] == {
+        "pyrx@autocad-2027": {},
+        "pyrx@zwcad-2026": {},
+    }
+
+
+def test_benchmark_command_emits_structured_report(tmp_path: Path, capsys) -> None:
+    assert main(["benchmark", "--workdir", str(tmp_path), "--entities", "12"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema"] == "all-in-cad/benchmark/v1"
+    assert payload["requested_entities"] == 12
+    assert payload["extracted_entities"] == 12
+    assert len(payload["stages"]) == 3
