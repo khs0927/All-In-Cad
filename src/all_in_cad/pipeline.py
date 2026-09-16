@@ -12,7 +12,7 @@ from .architecture import (
     infer_rooms,
 )
 from .extraction import ExtractionLane, ToolProbe
-from .extraction_runtime import ExtractionRun, extract_dwg, normalize_dxf
+from .extraction_runtime import extract_dwg, normalize_dxf
 from .inventory import FileKind, FileRecord, InventoryManifest
 from .project_index import IndexResult, ProjectIndex, SemanticIndexResult
 from .readback import EntitySnapshot
