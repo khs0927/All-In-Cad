@@ -7,6 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ACadSharp" Version="3.7.16" />
+    <PackageReference Include="ACadSharp" Version="3.7.1" />
   </ItemGroup>
 </Project>
