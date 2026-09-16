@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <Nullable>enable</Nullable>
+    <Platforms>x64</Platforms>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ZWCAD2026_DIR)' != ''">
+    <!-- Resolve exact ZRX.NET managed assembly names from the installed ZWCAD 2026 SDK before enabling the build. -->
+  </ItemGroup>
+</Project>

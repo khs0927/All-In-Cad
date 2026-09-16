@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <DefineConstants Condition="'$(ACAD2027_DIR)' != ''">$(DefineConstants);AIC_AUTOCAD_SDK</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ACAD2027_DIR)' != ''">
+    <Reference Include="AcCoreMgd"><HintPath>$(ACAD2027_DIR)\AcCoreMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcDbMgd"><HintPath>$(ACAD2027_DIR)\AcDbMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcMgd"><HintPath>$(ACAD2027_DIR)\AcMgd.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

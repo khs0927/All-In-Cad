@@ -1,0 +1,32 @@
+name: core-ci
+
+on:
+  push:
+    branches: ["main", "agent/**"]
+  pull_request:
+
+jobs:
+  python-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: pytest
+      - name: Validate upstream lock JSON
+        run: python -m json.tool upstream/upstream.lock.json > /dev/null
+      - name: Validate layer config JSON
+        run: python -m json.tool configs/architectural-layers.json > /dev/null
+
+  native-scaffold-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert AutoCAD 2027 targets .NET 10
+        run: grep -q '<TargetFramework>net10.0-windows</TargetFramework>' native/autocad2027/AllInCad.AutoCAD2027.csproj
+      - name: Assert ZWCAD adapter does not guess vendor DLLs in CI
+        run: grep -q 'Resolve exact ZRX.NET managed assembly names' native/zwcad2026/AllInCad.ZWCAD2026.csproj
