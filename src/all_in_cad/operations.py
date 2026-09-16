@@ -134,7 +134,17 @@ def validate_change_operation(operation: ChangeOperation) -> PrimitiveSpec:
 
 
 def _validate_common_parameters(kind: OperationKind, parameters: dict[str, Any]) -> None:
-    for key in ("start", "end", "delta", "base_point", "insertion_point", "first", "second", "dimension_line"):
+    point_keys = (
+        "start",
+        "end",
+        "delta",
+        "base_point",
+        "insertion_point",
+        "first",
+        "second",
+        "dimension_line",
+    )
+    for key in point_keys:
         if key in parameters:
             _validate_point(key, parameters[key])
 
