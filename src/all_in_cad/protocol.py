@@ -45,7 +45,7 @@ class RpcRequest(BaseModel):
     session_token: str | None = None
 
     @model_validator(mode="after")
-    def validate_protocol(self) -> "RpcRequest":
+    def validate_protocol(self) -> RpcRequest:
         if self.protocol != PROTOCOL_VERSION:
             raise ValueError(f"unsupported protocol: {self.protocol}")
         return self
@@ -61,7 +61,7 @@ class RpcResponse(BaseModel):
     error: RpcError | None = None
 
     @model_validator(mode="after")
-    def validate_shape(self) -> "RpcResponse":
+    def validate_shape(self) -> RpcResponse:
         if self.protocol != PROTOCOL_VERSION:
             raise ValueError(f"unsupported protocol: {self.protocol}")
         if self.ok and self.error is not None:
@@ -75,7 +75,7 @@ class RpcResponse(BaseModel):
         cls,
         request_id: UUID,
         result: dict[str, Any] | None = None,
-    ) -> "RpcResponse":
+    ) -> RpcResponse:
         return cls(request_id=request_id, ok=True, result=result or {})
 
     @classmethod
@@ -86,7 +86,7 @@ class RpcResponse(BaseModel):
         message: str,
         *,
         details: dict[str, Any] | None = None,
-    ) -> "RpcResponse":
+    ) -> RpcResponse:
         return cls(
             request_id=request_id,
             ok=False,
