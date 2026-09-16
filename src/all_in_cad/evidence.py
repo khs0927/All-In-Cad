@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -96,12 +97,15 @@ def compare_extraction_runs(
     )
 
 
+_COORDINATE_PRECISION = 6
+
+
 def handle_independent_geometry_digest(snapshots: Iterable[EntitySnapshot]) -> str:
     normalized = [
         {
             "entity_type": item.entity_type.upper(),
             "layer": item.layer,
-            "geometry": item.geometry,
+            "geometry": _normalize_numbers(item.geometry),
         }
         for item in snapshots
     ]
@@ -113,6 +117,30 @@ def handle_independent_geometry_digest(snapshots: Iterable[EntitySnapshot]) -> s
         ensure_ascii=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _normalize_numbers(value: Any) -> Any:
+    """Canonicalize numeric leaves so lanes agree regardless of JSON encoder.
+
+    Three independent effects must collapse to the same digest for an identical
+    drawing:
+
+    * ezdxf yields Python floats (``50.0``) while a .NET probe emits a JSON
+      number that reads back as an integer (``50``);
+    * ACadSharp rounds coordinates to 6 decimals while the LibreDWG lane keeps
+      full double precision, so the same point appears as ``50.0`` versus
+      ``49.99999999999999``;
+    * floating-point round trips through DWG introduce ~1e-14 noise.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return round(float(value), _COORDINATE_PRECISION)
+    if isinstance(value, Mapping):
+        return {k: _normalize_numbers(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_numbers(item) for item in value]
+    return value
 
 
 def _document_id(items: list[EntitySnapshot], explicit: str | None) -> str:

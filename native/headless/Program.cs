@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ACadSharp;
 using ACadSharp.IO;
+using AllInCad.ACadSharpProbe;
 
 if (args.Length == 1 && args[0] == "--capabilities")
 {
@@ -27,10 +28,10 @@ try
     var entities = doc.Entities.Select(entity => new
     {
         handle = entity.Handle.ToString("X"),
-        entity_type = entity.GetType().Name.ToUpperInvariant(),
+        entity_type = CensusMapper.NormalizeTypeName(entity),
         layer = entity.Layer?.Name ?? "0",
-        geometry = new Dictionary<string, object?>(),
-        properties = new Dictionary<string, object?>()
+        geometry = CensusMapper.ExtractGeometry(entity),
+        properties = CensusMapper.ExtractProperties(entity)
     }).ToArray();
 
     Console.WriteLine(JsonSerializer.Serialize(new

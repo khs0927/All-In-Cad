@@ -15,3 +15,7 @@ jobs/
 *.bak
 *.sv$
 *.ac$
+
+# .NET build output for the headless ACadSharp probe
+native/headless/bin/
+native/headless/obj/
