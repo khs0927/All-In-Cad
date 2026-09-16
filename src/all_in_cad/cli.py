@@ -13,6 +13,8 @@ from .capabilities import (
     capability_gaps,
     normalize_probe_payload,
 )
+from .cross_lane import verify_dwg_across_lanes
+from .extraction import ExtractionLane, ToolProbe
 from .inventory import build_inventory
 from .pipeline import process_manifest
 from .project_index import ProjectIndex
@@ -36,6 +38,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     index_parser.add_argument("--compute-hash", action="store_true")
     index_parser.add_argument("--fail-fast", action="store_true")
     _add_probe_arguments(index_parser)
+
+    verify_parser = subparsers.add_parser(
+        "verify-dwg",
+        help="force the same DWG through multiple extraction lanes and compare evidence",
+    )
+    verify_parser.add_argument("--source", required=True)
+    verify_parser.add_argument("--workdir", required=True)
+    verify_parser.add_argument(
+        "--lane",
+        action="append",
+        choices=["acadsharp", "oda", "libredwg"],
+        help="repeat to select explicit lanes; otherwise all available lanes are used",
+    )
+    verify_parser.add_argument(
+        "--no-digest",
+        action="store_true",
+        help="compare document/entity/layer census without requiring geometry digest equality",
+    )
+    _add_probe_arguments(verify_parser)
 
     matrix_parser = subparsers.add_parser(
         "capability-matrix",
@@ -66,6 +87,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "doctor":
         print(json.dumps(capability_report(probes), indent=2, sort_keys=True))
         return 0
+    if args.command == "verify-dwg":
+        return _run_verify_dwg(args, probes)
 
     return _run_index(args, probes)
 
@@ -97,7 +120,26 @@ def _run_capability_matrix(paths: list[str]) -> int:
     return 0
 
 
-def _run_index(args: argparse.Namespace, probes: dict) -> int:
+def _run_verify_dwg(
+    args: argparse.Namespace,
+    probes: dict[ExtractionLane, ToolProbe],
+) -> int:
+    lanes = tuple(ExtractionLane(item) for item in args.lane) if args.lane else None
+    manifest = verify_dwg_across_lanes(
+        args.source,
+        probes,
+        args.workdir,
+        lanes=lanes,
+        require_digest_match=not args.no_digest,
+    )
+    print(json.dumps(manifest.model_dump(mode="json"), indent=2, sort_keys=True))
+    return 0 if manifest.verification.passed else 2
+
+
+def _run_index(
+    args: argparse.Namespace,
+    probes: dict[ExtractionLane, ToolProbe],
+) -> int:
     manifest = build_inventory(args.root, compute_hash=args.compute_hash)
     db_path = Path(args.db).expanduser().resolve()
     db_path.parent.mkdir(parents=True, exist_ok=True)
