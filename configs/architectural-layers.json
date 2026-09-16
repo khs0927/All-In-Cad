@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "exact": {
+    "COL": "column", "WAL1": "wall", "WAL2": "wall", "WAL3": "wall",
+    "ELE": "elevator", "DOOR": "door", "DOOR_ELE": "door",
+    "WIN": "window", "WINBAR": "window_bar", "WINELE": "window",
+    "STAIR": "stair", "DIM": "dimension", "DIMLE": "dimension",
+    "CEN": "centerline", "CEN1": "centerline"
+  },
+  "policy": {"unknown_layers": "preserve_and_flag", "never_delete_unknown": true}
+}

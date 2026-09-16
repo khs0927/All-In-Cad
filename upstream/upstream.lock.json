@@ -1,0 +1,18 @@
+{
+  "reviewed_at": "2026-09-16",
+  "policy": "Pin reviewed upstream commits. Vendor only permissively licensed code after file-level review; keep LGPL code external.",
+  "projects": [
+    {"repo":"bimwright/dwg-mcp","commit":"c04af1ff5ae36f0851ed928c3c3b0766cd36b71a","license":"Apache-2.0","integration":"reference-and-adapt","use":["AutoCAD 2027 shell","Named Pipe transport","target discovery","handle-based tools"]},
+    {"repo":"CEXT-Dan/PyRx","commit":"8f102b2b06203d39fd8bf2fc966dbb7bce6bc45d","license":"LGPL-3.0","integration":"external-dependency","use":["ObjectARX/ZRX Python binding","AutoCAD/ZWCAD common native experiments"]},
+    {"repo":"FsDiG/Fs.Fox.CAD","commit":"622a0e8b5f5769e17bc5bad4f7a47f958915658c","license":"MIT","integration":"nuget-or-adapt","use":["ZWCAD 2025-2026 managed API helpers","DBTrans","shared AutoCAD/ZWCAD patterns"]},
+    {"repo":"beiming183-cloud/AutoCAD-MCP","commit":"11f7c47e5038796a20451b38b23032e625b5aa26","license":"MIT","integration":"reference-and-adapt","use":["native worker fencing","idempotency","revision checks","requested/actual/diff"]},
+    {"repo":"LokmenoWer/best-cad-mcp","commit":"0801ade2260195a5399fa5027ee925b72fc3e259","license":"MIT","integration":"reference-and-adapt","use":["CADPlan","CAD-IR","dry-run workflow","semantic graph","visual evidence"]},
+    {"repo":"jeremylongshore/cad-ai-agent","commit":"0866c8e8a5bc8c4f820d4b074bcc09c34d9c85be","license":"Apache-2.0","integration":"reference-and-adapt","use":["typed ChangeSet","protected layers","revision comparison","AEC analysis"]},
+    {"repo":"dalingo81/ZWCAD-MCP","commit":"49883a983e665900bbc37b9f200daf99144818e1","license":"MIT","integration":"fallback-adapter-reference","use":["ZWCAD 2026 LISP/File IPC fallback","window dispatch quirks","screenshot fallback"]},
+    {"repo":"mozman/ezdxf","commit":"d6f2ac10caeddc712ed1824aaeb3b9c050de4a04","license":"MIT","integration":"python-dependency","use":["independent DXF census","geometry verification","headless rendering"]}
+  ],
+  "reference_only": [
+    {"repo":"A-SHOJAEI/ConstructDrawingAI","reason":"Useful CIR/connectivity ideas but GitHub license metadata is NOASSERTION; do not copy code until license is resolved."},
+    {"repo":"Jovinull/cad-preproc","reason":"Topology and layer-semantic pipeline reference; perform license review before copying code."}
+  ]
+}
