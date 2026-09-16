@@ -59,6 +59,20 @@ def test_copyleft_project_is_allowed_only_as_external_boundary(
     assert lock["projects"][0]["integration"] == integration
 
 
+@pytest.mark.parametrize("integration", ["not-external", "external-vendored", "external-inprocess"])
+def test_copyleft_project_rejects_deceptive_external_labels(
+    tmp_path: Path,
+    integration: str,
+) -> None:
+    path = _write_lock(
+        tmp_path,
+        [_project(license="GPL-3.0", integration=integration)],
+    )
+
+    with pytest.raises(AuditError, match="copyleft dependency must remain external"):
+        load_lock(path)
+
+
 def test_duplicate_repository_is_rejected(tmp_path: Path) -> None:
     path = _write_lock(tmp_path, [_project(), _project(commit="b" * 40)])
 
