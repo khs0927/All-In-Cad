@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev]"
+      - run: python -m pip install -e ".[dev,headless]"
       - run: ruff check src tests scripts
       - run: pytest
       - name: Validate upstream lock JSON
@@ -32,6 +32,7 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - run: dotnet build native/shared/AllInCad.NativeProtocol.csproj --configuration Release
+      - run: dotnet build native/headless/AllInCad.ACadSharpProbe.csproj --configuration Release
 
   native-scaffold-policy:
     runs-on: ubuntu-latest
@@ -47,3 +48,7 @@ jobs:
           native/zwcad2026/AllInCad.ZWCAD2026.csproj
       - name: Assert shared pipe is current-user-only
         run: grep -q 'PipeOptions.CurrentUserOnly' native/shared/CurrentUserPipeServer.cs
+      - name: Assert copyleft tools remain external
+        run: >
+          grep -q '"integration":"external-executable-only"'
+          upstream/upstream.lock.json
