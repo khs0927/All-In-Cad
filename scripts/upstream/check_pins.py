@@ -13,6 +13,7 @@ from typing import Any
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 API_ROOT = "https://api.github.com"
 COPYLEFT_LICENSES = {"LGPL-3.0", "GPL-3.0"}
+COPYLEFT_EXTERNAL_INTEGRATIONS = {"external-dependency", "external-executable-only"}
 
 
 class AuditError(RuntimeError):
@@ -41,7 +42,7 @@ def _validate_project(project: dict[str, Any], seen: set[str]) -> None:
     if not isinstance(uses, list) or not uses or not all(isinstance(item, str) for item in uses):
         raise AuditError(f"invalid use list for {repo}")
 
-    if license_name in COPYLEFT_LICENSES and "external" not in integration:
+    if license_name in COPYLEFT_LICENSES and integration not in COPYLEFT_EXTERNAL_INTEGRATIONS:
         raise AuditError(f"copyleft dependency must remain external: {repo}")
 
 
