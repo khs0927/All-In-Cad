@@ -36,6 +36,11 @@ A peer must reject unknown major protocol versions rather than guessing compatib
 | `plan.execute` | write | execute an approved `ChangePlan` atomically |
 | `verification.capture` | read | collect post-write native verification evidence |
 
+`host.capabilities` returns `read` and `write` arrays of enabled RPC method names. The AutoCAD 2027
+read-only bring-up reports `system.ping`, `host.context`, and `host.capabilities` under `read`, an
+empty `write` list, `write_enabled: false`, and `revision_tracking: false`. Omitted methods are not
+advertised and continue to fail closed.
+
 ## Write invariants
 
 `plan.execute` must fail closed unless all are true:

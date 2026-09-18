@@ -18,8 +18,23 @@ $python = Get-Command python -ErrorAction SilentlyContinue
 Add-Check "Python" ($null -ne $python) ($(if ($python) { & python --version 2>&1 } else { "not found" }))
 
 $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
-$dotnetDetail = if ($dotnet) { & dotnet --version 2>&1 } else { "not found" }
-Add-Check ".NET SDK" ($null -ne $dotnet) $dotnetDetail
+if ($dotnet) {
+  $dotnetOutput = @(& $dotnet.Source --list-sdks 2>&1)
+  $dotnetExitCode = $LASTEXITCODE
+  $dotnetVersions = @($dotnetOutput | Where-Object { $_ -match '^\s*\d+\.\d+\.\d+' })
+  $dotnetOk = $dotnetExitCode -eq 0 -and $dotnetVersions.Count -gt 0
+  if ($dotnetOk) {
+    $dotnetDetail = $dotnetVersions -join "; "
+  } elseif ($dotnetOutput.Count -gt 0) {
+    $dotnetDetail = "SDK unavailable: " + ($dotnetOutput -join " ")
+  } else {
+    $dotnetDetail = "no .NET SDKs installed"
+  }
+} else {
+  $dotnetOk = $false
+  $dotnetDetail = "dotnet command not found"
+}
+Add-Check ".NET SDK" $dotnetOk $dotnetDetail
 
 $odaCandidates = @(
   "$env:ProgramFiles\ODA\ODAFileConverter\ODAFileConverter.exe",

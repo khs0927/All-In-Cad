@@ -1,6 +1,6 @@
 # GitHub-first completion phase
 
-The goal of this phase is to finish everything that can be proven without launching AutoCAD or
+This phase separates repository-verifiable behavior from tests that require running AutoCAD or
 ZWCAD. Live host behavior is never guessed.
 
 ## Completed in repository
@@ -13,17 +13,22 @@ ZWCAD. Live host behavior is never guessed.
 - normalized entity snapshots and deterministic requested/actual diff primitives;
 - shared .NET 10 protocol library with `PipeOptions.CurrentUserOnly`;
 - protocol conformance tests;
-- CI build of the vendor-neutral .NET protocol assembly.
+- CI build of the vendor-neutral .NET protocol assembly;
+- AutoCAD 2027 adapter wiring for read-only ping and document context;
+- `AIC_STATUS` visibility into named-pipe listener readiness and its latest startup error;
+- UI-thread dispatch for AutoCAD context reads;
+- a .NET smoke client for the shared framed protocol;
+- Windows doctor detection of an installed .NET SDK, rather than only the `dotnet` launcher.
 
-## Still requires the Windows CAD machine
+## Still requires a live CAD session
 
 - Autodesk official MCP endpoint activation and inspection;
-- actual ObjectARX 2027 managed reference binding;
-- exact ZRX.NET 2026 managed reference binding;
-- loading the two plugins;
-- live Named Pipe ping/context round trips inside each CAD host;
-- actual DBObject/ZRX object transactions;
-- PyRx capability probe results;
-- performance measurements on real DWGs.
+- loading the AutoCAD adapter and recording ping/context smoke output;
+- exact ZRX.NET 2026 managed reference binding and plugin load;
+- loading PyRx in each host and capturing capability JSON;
+- actual DBObject/ZRX transactions, readback, and cross-lane checks;
+- performance and semantic validation on representative real DWGs.
 
-The repository should be extended from observed capability JSON, not from assumed API parity.
+A local AutoCAD 2027 blank-template attempt returned from the `NETLOAD` call, but the expected PID pipe did not become reachable and the smoke client timed out. The process exposed no main window, so command history could not confirm extension initialization; the live load remains unverified. `AIC_STATUS` now reports listener readiness and the latest listener error when run in the host.
+
+The AutoCAD bring-up worker is deliberately read-only: `plan.execute` and all drawing mutation methods return `E_METHOD_DISABLED`. Its context response states that revision tracking is not enabled. Extend the worker from observed capability JSON and live evidence, not from assumed API parity.

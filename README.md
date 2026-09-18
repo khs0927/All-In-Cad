@@ -100,3 +100,28 @@ After AutoCAD 2027 installation is complete:
 ```
 
 The next live milestone is the same capability matrix across Autodesk Official MCP, `bimwright/dwg-mcp` 2027, PyRx in AutoCAD 2027, and PyRx in ZWCAD 2026.
+
+## AutoCAD 2027 read-only pipe bring-up
+
+Build the host adapter against the installed AutoCAD 2027 managed API files:
+
+```powershell
+$env:DOTNET_ROOT = Join-Path (Get-Location) '.dotnet'
+$env:DOTNET_CLI_HOME = Join-Path (Get-Location) '.dotnet-home'
+& "$env:DOTNET_ROOT\dotnet.exe" build native\autocad2027\AllInCad.AutoCAD2027.csproj `
+  --configuration Release `
+  -p:ACAD2027_DIR='E:\Program files\AutoCAD 2027'
+```
+
+Load `native\autocad2027\bin\Release\net10.0-windows\AllInCad.AutoCAD2027.dll` with AutoCAD's `NETLOAD` command. Keep AutoCAD's secure loading enabled and add the build output directory to its trusted locations if needed. The adapter exposes read-only `system.ping`, `host.context`, and `host.capabilities`; its capability response advertises no writes. Drawing writes are disabled and revision tracking is not implemented.
+
+With the plugin loaded, run the protocol smoke client using the AutoCAD process ID:
+
+```powershell
+$acad = Get-Process acad | Where-Object { $_.Path -like '*\AutoCAD 2027\acad.exe' } | Select-Object -First 1
+if (-not $acad) { throw 'AutoCAD 2027 is not running.' }
+$acadPid = $acad.Id
+& "$env:DOTNET_ROOT\dotnet.exe" run --project native\smoke\AllInCad.SmokeClient.csproj -- $acadPid
+```
+
+The pipe name is `all-in-cad-acad-<process id>`. If `AIC_AUTOCAD_SESSION_TOKEN` is set before AutoCAD starts, the smoke client reads the same environment variable for authentication.
