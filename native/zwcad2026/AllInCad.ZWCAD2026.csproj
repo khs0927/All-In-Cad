@@ -4,8 +4,14 @@
     <Nullable>enable</Nullable>
     <Platforms>x64</Platforms>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants Condition="'$(ZWCAD2026_DIR)' != ''">$(DefineConstants);AIC_ZWCAD_SDK</DefineConstants>
   </PropertyGroup>
   <ItemGroup Condition="'$(ZWCAD2026_DIR)' != ''">
-    <!-- Resolve exact ZRX.NET managed assembly names from the installed ZWCAD 2026 SDK before enabling the build. -->
+    <Reference Include="ZwManaged"><HintPath>$(ZWCAD2026_DIR)\ZwManaged.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ZwDatabaseMgd"><HintPath>$(ZWCAD2026_DIR)\ZwDatabaseMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Windows.Forms" />
   </ItemGroup>
 </Project>
+

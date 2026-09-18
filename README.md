@@ -125,3 +125,9 @@ $acadPid = $acad.Id
 ```
 
 The pipe name is `all-in-cad-acad-<process id>`. If `AIC_AUTOCAD_SESSION_TOKEN` is set before AutoCAD starts, the smoke client reads the same environment variable for authentication.
+## ZWCAD 2026 read-only adapter
+
+The ZWCAD plugin targets .NET Framework 4.8 and binds the managed assemblies from the local
+ZWCAD 2026 installation. Build and load instructions are in [native/zwcad2026/README.md](native/zwcad2026/README.md).
+The current adapter advertises only ping, context, and capabilities; live loading and native
+transactions still require host verification.

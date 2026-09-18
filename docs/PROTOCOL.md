@@ -8,7 +8,8 @@ All-In-Cad uses one host-neutral local protocol for AutoCAD 2027 and ZWCAD 2026.
 - Pipe mode: byte stream.
 - Framing: 4-byte little-endian unsigned body length followed by UTF-8 JSON.
 - Maximum body: 8 MiB.
-- Server pipe security: `PipeOptions.CurrentUserOnly`.
+- Server pipe security is restricted to the current user: `PipeOptions.CurrentUserOnly` for
+  .NET 10 and an explicit current-user SID ACL for the .NET Framework 4.8 ZWCAD adapter.
 - One host process owns one pipe endpoint. A document write lease still prevents the same DWG
   from being modified by both hosts concurrently.
 - Optional per-session token adds defense in depth. It is not a replacement for the signed write
@@ -36,10 +37,10 @@ A peer must reject unknown major protocol versions rather than guessing compatib
 | `plan.execute` | write | execute an approved `ChangePlan` atomically |
 | `verification.capture` | read | collect post-write native verification evidence |
 
-`host.capabilities` returns `read` and `write` arrays of enabled RPC method names. The AutoCAD 2027
-read-only bring-up reports `system.ping`, `host.context`, and `host.capabilities` under `read`, an
-empty `write` list, `write_enabled: false`, and `revision_tracking: false`. Omitted methods are not
-advertised and continue to fail closed.
+The current AutoCAD 2027 and ZWCAD 2026 bring-up adapters report only `system.ping`,
+`host.context`, and `host.capabilities` under `read`, an empty `write` list,
+`write_enabled: false`, and `revision_tracking: false`. Omitted methods are not advertised and
+continue to fail closed. The ZWCAD adapter reads document context on the CAD UI thread.
 
 ## Write invariants
 
