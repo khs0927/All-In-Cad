@@ -66,10 +66,18 @@ foreach (var method in new[] { "system.ping", "host.context", "host.capabilities
     if (method == "host.capabilities")
     {
         if (!result.Value.TryGetProperty("read", out var readMethods)
-            || readMethods.ValueKind != JsonValueKind.Array
-            || !readMethods.EnumerateArray().Any(value => value.GetString() == "host.context"))
+            || readMethods.ValueKind != JsonValueKind.Array)
         {
-            throw new InvalidDataException("AutoCAD capabilities omitted host.context from read methods.");
+            throw new InvalidDataException("AutoCAD capabilities omitted the read-method array.");
+        }
+        var actualReadMethods = readMethods.EnumerateArray()
+            .Select(value => value.GetString() ?? string.Empty)
+            .ToHashSet(StringComparer.Ordinal);
+        var expectedReadMethods = new[] { "system.ping", "host.context", "host.capabilities" }
+            .ToHashSet(StringComparer.Ordinal);
+        if (!actualReadMethods.SetEquals(expectedReadMethods))
+        {
+            throw new InvalidDataException("AutoCAD advertised an unexpected read-method set.");
         }
         if (!result.Value.TryGetProperty("write", out var writeMethods)
             || writeMethods.ValueKind != JsonValueKind.Array
@@ -78,9 +86,11 @@ foreach (var method in new[] { "system.ping", "host.context", "host.capabilities
             throw new InvalidDataException("AutoCAD bring-up must advertise no write methods.");
         }
         if (!result.Value.TryGetProperty("write_enabled", out var writeEnabled)
-            || writeEnabled.ValueKind != JsonValueKind.False)
+            || writeEnabled.ValueKind != JsonValueKind.False
+            || !result.Value.TryGetProperty("revision_tracking", out var revisionTracking)
+            || revisionTracking.ValueKind != JsonValueKind.False)
         {
-            throw new InvalidDataException("AutoCAD bring-up must report write_enabled=false.");
+            throw new InvalidDataException("AutoCAD bring-up must disable writes and report revision_tracking=false.");
         }
     }
 

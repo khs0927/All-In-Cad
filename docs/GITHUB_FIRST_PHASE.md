@@ -29,6 +29,6 @@ ZWCAD. Live host behavior is never guessed.
 - actual DBObject/ZRX transactions, readback, and cross-lane checks;
 - performance and semantic validation on representative real DWGs.
 
-A local AutoCAD 2027 blank-template attempt returned from the `NETLOAD` call, but the expected PID pipe did not become reachable and the smoke client timed out. The process exposed no main window, so command history could not confirm extension initialization; the live load remains unverified. `AIC_STATUS` now reports listener readiness and the latest listener error when run in the host.
+A local AutoCAD 2027 blank-template attempt returned from the `NETLOAD` call, but the expected PID pipe did not become reachable and the smoke client timed out. The automation session could not access a main CAD window or command history, so extension initialization could not be confirmed; the live load remains unverified. `AIC_STATUS` now reports listener readiness and the latest listener error when run in the host.
 
 The AutoCAD bring-up worker is deliberately read-only: `plan.execute` and all drawing mutation methods return `E_METHOD_DISABLED`. Its context response states that revision tracking is not enabled. Extend the worker from observed capability JSON and live evidence, not from assumed API parity.
