@@ -487,9 +487,16 @@ def test_write_readback_layers_match_the_slot_plan() -> None:
 def test_write_readback_coordinates_match_the_plan() -> None:
     doc = _new_doc()
     record = write_window(doc, make_window((0, 0), (1000, 0)))
-    by_role = dict(
-        zip([spec.role for spec in record.geometry.entities], record.snapshots, strict=False)
+    # MEASURED: write_window emits one handle per planned entity and snapshots
+    # are read back from those handles, so counts match by construction
+    # (divisions=1 -> 6, 2 -> 7, 3 -> 8, 4 -> 9). Both lengths are named so a
+    # dropped entity cannot slip through a silently short zip.
+    roles = [spec.role for spec in record.geometry.entities]
+    assert len(roles) == len(record.snapshots), (
+        f"entity/snapshot 1:1 pairing broken: "
+        f"{len(roles)} entities vs {len(record.snapshots)} snapshots"
     )
+    by_role = dict(zip(roles, record.snapshots, strict=True))
     jamb = by_role["jamb_start"]
     assert jamb.geometry["start"] == pytest.approx([-750.0, -50.0])
     assert jamb.geometry["end"] == pytest.approx([-750.0, 50.0])

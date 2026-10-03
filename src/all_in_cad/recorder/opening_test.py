@@ -610,9 +610,16 @@ def test_write_readback_layers_match_the_slot_plan() -> None:
 def test_write_readback_coordinates_match_the_plan() -> None:
     doc = _new_doc()
     record = write_opening(doc, make_opening(HORIZONTAL, 2000))
-    by_role = dict(
-        zip([spec.role for spec in record.geometry.entities], record.snapshots, strict=False)
+    # MEASURED: write_opening appends exactly one handle per planned entity and
+    # builds snapshots from those same handles, so the two sequences are 1:1 by
+    # construction (6 == 6 for HORIZONTAL/OBLIQUE/VERTICAL). The assert names
+    # both lengths so a dropped entity cannot pass as a short zip.
+    roles = [spec.role for spec in record.geometry.entities]
+    assert len(roles) == len(record.snapshots), (
+        f"entity/snapshot 1:1 pairing broken: "
+        f"{len(roles)} entities vs {len(record.snapshots)} snapshots"
     )
+    by_role = dict(zip(roles, record.snapshots, strict=True))
     edge = by_role["edge_start"]
     assert edge.geometry["start"] == pytest.approx([0.0, -50.0])
     assert edge.geometry["end"] == pytest.approx([0.0, 50.0])

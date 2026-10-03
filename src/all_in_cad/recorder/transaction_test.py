@@ -170,16 +170,33 @@ def test_restore_failure_is_reported_not_hidden(workdir: Path, monkeypatch) -> N
     out = workdir / "plan.dxf"
     write_text(out, "original\n")
     jdir = workdir / "journals"
-    # captured but never asserted on (kept, not deleted): the report shows this
-    # reads like a dropped post-failure content check
-    _before_state = tx.capture_state(out)
+    before_state = tx.capture_state(out)
 
     txn = tx.begin(out, journal_dir=jdir)
     txn.apply(lambda t: write_text(out, "changed\n"))
+    after_apply_sha = sha(out)
+
     monkeypatch.setattr(tx, "_restore_target", lambda target: None)
     with pytest.raises(tx.RestoreUnverified) as excinfo:
         txn.rollback()
-    assert not excinfo.value.report["targets"][0]["verified"]
+
+    reported = excinfo.value.report["targets"][0]
+    assert not reported["verified"]
+    # The report must name the two states it compared, not merely say "no":
+    # the expected side is the pre-recording capture, the actual side is the
+    # bytes the recording actually left behind. A report that echoed the
+    # expected hash on both sides would satisfy `not verified` alone.
+    assert reported["expected_sha256"] == before_state.sha256
+    assert reported["actual_sha256"] == after_apply_sha
+    assert reported["actual_sha256"] != reported["expected_sha256"]
+    # The failure is reported against reality: the on-disk file is still the
+    # post-apply bytes, so the state does NOT match the capture.
+    assert sha(out) == after_apply_sha
+    assert not tx.content_matches(tx.capture_state(out), before_state)
+    assert txn.state == "restore_unverified"
+    # Fail-closed: the pre-image is the only way to retry, so the journal and
+    # its backups must survive an unverified restore.
+    assert journals(jdir) == [txn.journal]
 
 
 # ======================================================================
@@ -189,9 +206,11 @@ def test_exception_in_apply_restores_every_target(workdir: Path) -> None:
     wall = workdir / "wall.dxf"
     door = workdir / "door.dxf"
     write_text(wall, "wall-original\n")
-    write_text(door, "door-original\n")
+    # CRLF bytes: a restore that round-trips the pre-image through text and
+    # writes '\n' would still pass a read_text() comparison but not the hash.
+    door.write_bytes(b"door-original\r\n")
     jdir = workdir / "journals"
-    pre_wall, _pre_door = sha(wall), sha(door)
+    pre_wall, pre_door = sha(wall), sha(door)
 
     def plan(txn):
         write_text(wall, "wall-new\n")
@@ -203,7 +222,15 @@ def test_exception_in_apply_restores_every_target(workdir: Path) -> None:
             txn.apply(plan)
 
     assert sha(wall) == pre_wall
+    # Byte-level: the partially written door is back to its pre-apply hash,
+    # not merely to a file that happens to read as the same text. A restore
+    # that normalised line endings or re-encoded would survive read_text().
+    assert sha(door) == pre_door
     assert door.read_text(encoding="utf-8") == "door-original\n"
+    # Every target, not just the two we sampled, was verified.
+    assert {Path(item["path"]) for item in txn.rollback_report} == {wall, door}
+    assert all(item["verified"] for item in txn.rollback_report)
+    assert txn.state == "rolled_back"
     assert journals(jdir) == []
 
 

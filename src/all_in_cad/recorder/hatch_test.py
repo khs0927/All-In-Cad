@@ -38,6 +38,7 @@ from all_in_cad.recorder.hatch import (  # noqa: E402
     HATCH_APPID,
     HATCH_LAYER_STATUS,
     KNOWN_HATCH_LAYERS,
+    MIN_AREA_MM2,
     UNRESOLVED_XRECORD_API,
     HatchPattern,
     HatchRole,
@@ -138,6 +139,55 @@ def test_sliver_below_min_area_rejected() -> None:
     sliver = [(0.0, 0.0), (1000.0, 0.0), (1000.0, 0.0005), (0.0, 0.0005)]
     with pytest.raises(HatchValidationError, match="degenerate boundary"):
         make_hatch(sliver, layer=TEST_LAYER, pattern_name="ANSI31")
+
+
+def test_default_min_area_is_the_module_constant() -> None:
+    """The default path must actually use MIN_AREA_MM2, not a private literal.
+
+    MEASURED: hatch.py:294 (HatchGeometry) and hatch.py:525 (make_hatch) both
+    default ``min_area_mm2`` to ``MIN_AREA_MM2``; the threshold read here is the
+    module constant, so a constant that changes value moves the default with it.
+    """
+    assert math.isfinite(MIN_AREA_MM2) and MIN_AREA_MM2 > 0.0
+
+    default_geometry = make_hatch(_square(), layer=TEST_LAYER, pattern_name="ANSI31")
+    assert default_geometry.min_area_mm2 == MIN_AREA_MM2
+
+
+def _rect_of_area(area_mm2: float) -> list[tuple[float, float]]:
+    """A ring whose |shoelace area| is exactly ``area_mm2`` (width=area, height=1).
+
+    The shoelace sum for this ring is exactly ``2 * width``, so the enclosed
+    area is bit-exact rather than approximate: the boundary tests below really
+    do sit one ULP either side of the constant.
+    """
+    return [(0.0, 0.0), (area_mm2, 0.0), (area_mm2, 1.0), (0.0, 1.0)]
+
+
+def test_default_threshold_rejects_area_one_ulp_below_the_constant() -> None:
+    """Just under MIN_AREA_MM2 is rejected on the DEFAULT path (no override)."""
+    just_below = math.nextafter(MIN_AREA_MM2, 0.0)
+    with pytest.raises(HatchValidationError, match="degenerate boundary"):
+        make_hatch(_rect_of_area(just_below), layer=TEST_LAYER, pattern_name="ANSI31")
+
+
+def test_default_threshold_accepts_area_exactly_equal_to_the_constant() -> None:
+    """The comparison is ``area < min_area_mm2``, so equality is ALLOWED.
+
+    This is the operator contract: an implementation that rewrites it as
+    ``area <= min_area_mm2`` would silently reject the boundary itself.
+    """
+    geometry = make_hatch(
+        _rect_of_area(MIN_AREA_MM2), layer=TEST_LAYER, pattern_name="ANSI31"
+    )
+    assert geometry.area_mm2() == pytest.approx(MIN_AREA_MM2, abs=0.0, rel=0.0)
+    assert geometry.min_area_mm2 == MIN_AREA_MM2
+
+
+def test_default_threshold_accepts_area_one_ulp_above_the_constant() -> None:
+    just_above = math.nextafter(MIN_AREA_MM2, math.inf)
+    geometry = make_hatch(_rect_of_area(just_above), layer=TEST_LAYER, pattern_name="ANSI31")
+    assert geometry.area_mm2() == pytest.approx(just_above, abs=0.0, rel=0.0)
 
 
 def test_min_area_threshold_is_honoured_when_lowered() -> None:
