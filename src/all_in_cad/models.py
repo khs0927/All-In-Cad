@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from enum import StrEnum
 import re
+from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
