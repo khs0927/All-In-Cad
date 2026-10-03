@@ -23,6 +23,25 @@ def _source_binding(document_id: str = "doc-1") -> SourceBindingRef:
         resolver_receipt_sha256="e" * 64,
     )
 
+
+def _drawing_grammar() -> DrawingGrammarRef:
+    return DrawingGrammarRef(
+        document={"name": "A-201.dwg", "path": r"C:\\CAD\\A-201.dwg"},
+        anchor={"handle": "2F3", "radius": 5000},
+        recommended_generation_style={
+            "layer": "A-WALL",
+            "text_style": "ROMANS",
+            "dimension_style": "DIM-100",
+        },
+        distributions={"layers": [["A-WALL", 20], ["A-DOOR", 8]]},
+        evidence={
+            "nearby_entity_count": 28,
+            "sample_digest": "f" * 64,
+        },
+        contract_digest="9" * 64,
+    )
+
+
 def _doc() -> DocumentRef:
     return DocumentRef(
         host=HostKind.ZWCAD,
@@ -112,7 +131,6 @@ def test_execution_receipt_can_reference_ontology_handoff() -> None:
     )
     assert receipt.source_binding_handoff_digest == "d" * 64
     assert receipt.source_id == "a" * 64
-
 
 
 def test_change_plan_can_carry_non_authorizing_drawing_grammar() -> None:
