@@ -5,6 +5,7 @@ from all_in_cad.models import (
     ChangeOperation,
     ChangePlan,
     DocumentRef,
+    DrawingGrammarRef,
     EntityRef,
     ExecutionReceipt,
     HostKind,
@@ -111,3 +112,32 @@ def test_execution_receipt_can_reference_ontology_handoff() -> None:
     )
     assert receipt.source_binding_handoff_digest == "d" * 64
     assert receipt.source_id == "a" * 64
+
+
+
+def test_change_plan_can_carry_non_authorizing_drawing_grammar() -> None:
+    operation = ChangeOperation(
+        op_id="create-wall",
+        kind="wall.create",
+        parameters={"start": [0, 0], "end": [1000, 0]},
+    )
+    plan = ChangePlan(
+        document=_doc(),
+        expected_revision=7,
+        idempotency_key="grammar-plan-0001",
+        operations=[operation],
+        drawing_grammar=_drawing_grammar(),
+    )
+    assert plan.drawing_grammar is not None
+    assert plan.drawing_grammar.schema == "cad-drawing-grammar/1"
+    assert plan.drawing_grammar.execution_authorized is False
+    assert plan.drawing_grammar.may_execute_mutation is False
+    assert plan.drawing_grammar.recommended_generation_style["layer"] == "A-WALL"
+
+
+def test_drawing_grammar_requires_verifiable_sample_evidence() -> None:
+    with pytest.raises(ValidationError):
+        DrawingGrammarRef(
+            evidence={"nearby_entity_count": 1, "sample_digest": "not-a-digest"},
+            contract_digest="9" * 64,
+        )
