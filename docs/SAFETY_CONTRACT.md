@@ -21,3 +21,15 @@ Native AutoCAD/ZWCAD adapters are expected to use host database transactions. Th
 ## Cross-CAD rule
 
 AutoCAD and ZWCAD may both be open, but they must not concurrently write the same physical DWG. Default mode is ZWCAD authoritative writer and AutoCAD analysis/verification mirror. Writer switching happens only after lease release and host reload.
+
+
+## Source identity fence
+
+When a plan originates from AEC Ontology context, `DocumentRef.source_binding` carries an
+`aec-executor-handoff/1` reference. It is accepted only for the same live `document_id`
+and remains explicitly non-authorizing. Native executors still require their normal
+approval, revision, lease, transaction and read-back fences.
+
+Execution receipts may carry the Ontology handoff digest plus source/revision identifiers.
+This creates an auditable loop `Ontology SOURCE_BOUND -> CAD execution -> receipt ->
+Ontology evidence` without making GraphRAG or source lookup an execution authority.
