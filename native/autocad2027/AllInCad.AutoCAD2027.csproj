@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
@@ -12,4 +13,8 @@
     <Reference Include="AcDbMgd"><HintPath>$(ACAD2027_DIR)\AcDbMgd.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="AcMgd"><HintPath>$(ACAD2027_DIR)\AcMgd.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\shared\AllInCad.NativeProtocol.csproj" />
+  </ItemGroup>
 </Project>
+
