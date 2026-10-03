@@ -37,6 +37,7 @@ jobs:
           dotnet-version: "10.0.x"
       - run: dotnet build native/shared/AllInCad.NativeProtocol.csproj --configuration Release
       - run: dotnet build native/headless/AllInCad.ACadSharpProbe.csproj --configuration Release
+      - run: dotnet build native/smoke/AllInCad.SmokeClient.csproj --configuration Release
       - name: Exercise ACadSharp capability probe
         run: >
           dotnet run --project native/headless/AllInCad.ACadSharpProbe.csproj
@@ -50,13 +51,20 @@ jobs:
         run: >
           grep -q '<TargetFramework>net10.0-windows</TargetFramework>'
           native/autocad2027/AllInCad.AutoCAD2027.csproj
-      - name: Assert ZWCAD adapter does not guess vendor DLLs in CI
+      - name: Assert ZWCAD adapter targets .NET Framework 4.8
         run: >
-          grep -q 'Resolve exact ZRX.NET managed assembly names'
+          grep -q '<TargetFramework>net48</TargetFramework>'
           native/zwcad2026/AllInCad.ZWCAD2026.csproj
+      - name: Assert ZWCAD local API bindings are detected by SDK path
+        run: |
+          grep -q 'ZWCAD2026_DIR' native/zwcad2026/AllInCad.ZWCAD2026.csproj
+          grep -q 'ZwManaged.dll' native/zwcad2026/AllInCad.ZWCAD2026.csproj
+          grep -q 'ZwDatabaseMgd.dll' native/zwcad2026/AllInCad.ZWCAD2026.csproj
       - name: Assert shared pipe is current-user-only
         run: grep -q 'PipeOptions.CurrentUserOnly' native/shared/CurrentUserPipeServer.cs
       - name: Assert copyleft tools remain external
         run: >
           grep -q '"integration":"external-executable-only"'
           upstream/upstream.lock.json
+
+

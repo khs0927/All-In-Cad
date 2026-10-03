@@ -19,3 +19,7 @@ jobs/
 # .NET build output for the headless ACadSharp probe
 native/headless/bin/
 native/headless/obj/
+.dotnet/
+.dotnet-home/
+**/bin/
+**/obj/
