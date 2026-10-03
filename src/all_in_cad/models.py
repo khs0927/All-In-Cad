@@ -40,6 +40,34 @@ class SourceBindingRef(BaseModel):
     requires_executor_authorization: Literal[True] = True
 
 
+class DrawingGrammarRef(BaseModel):
+    """Read-only local drafting grammar sampled from an existing CAD drawing."""
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    schema: Literal["cad-drawing-grammar/1"] = "cad-drawing-grammar/1"
+    document: dict[str, Any] = Field(default_factory=dict)
+    anchor: dict[str, Any] = Field(default_factory=dict)
+    recommended_generation_style: dict[str, Any] = Field(default_factory=dict)
+    distributions: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    contract_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_authorized: Literal[False] = False
+    may_execute_mutation: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> DrawingGrammarRef:
+        sample_digest = self.evidence.get("sample_digest")
+        nearby_count = self.evidence.get("nearby_entity_count")
+        if not isinstance(sample_digest, str) or not __import__("re").fullmatch(
+            r"[0-9a-f]{64}", sample_digest
+        ):
+            raise ValueError("drawing grammar evidence.sample_digest must be SHA-256")
+        if not isinstance(nearby_count, int) or nearby_count < 0:
+            raise ValueError("drawing grammar evidence.nearby_entity_count must be >= 0")
+        return self
+
+
 class DocumentRef(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -95,6 +123,7 @@ class ChangePlan(BaseModel):
     evidence_requirements: list[str] = Field(
         default_factory=lambda: ["native_readback", "independent_cross_check"]
     )
+    drawing_grammar: DrawingGrammarRef | None = None
 
     @model_validator(mode="after")
     def validate_plan_fences(self) -> ChangePlan:
