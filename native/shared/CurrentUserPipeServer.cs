@@ -14,6 +14,11 @@ public sealed class CurrentUserPipeServer : IAsyncDisposable
     private readonly string? requiredSessionToken;
     private readonly CancellationTokenSource cancellation = new();
     private Task? listener;
+    private volatile bool listenerReady;
+    private volatile string? lastListenerError;
+
+    public bool IsListening => listenerReady;
+    public string? LastListenerError => lastListenerError;
 
     public CurrentUserPipeServer(
         string pipeName,
@@ -52,16 +57,21 @@ public sealed class CurrentUserPipeServer : IAsyncDisposable
                     1,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                listenerReady = true;
+                lastListenerError = null;
 
                 await pipe.WaitForConnectionAsync(cancellation.Token).ConfigureAwait(false);
                 await ProcessConnectionAsync(pipe, cancellation.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
             {
+                listenerReady = false;
                 return;
             }
-            catch
+            catch (Exception error)
             {
+                listenerReady = false;
+                lastListenerError = string.Concat(error.GetType().Name, ": ", error.Message);
                 try
                 {
                     await Task.Delay(250, cancellation.Token).ConfigureAwait(false);
