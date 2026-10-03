@@ -1,0 +1,163 @@
+{
+  "checked_at": "2026-10-03",
+  "verification_kind": "PIN_EXISTENCE_AND_ROOT_LICENSE_READ",
+  "scope": "GitHub API commit identity and root license file; not file-level license clearance, dependency audit, native fixture or execution authorization",
+  "execution_allowed": false,
+  "canonical_allowed": false,
+  "projects": [
+    {
+      "repo": "bimwright/dwg-mcp",
+      "pinned_sha": "c04af1ff5ae36f0851ed928c3c3b0766cd36b71a",
+      "pin_exists": true,
+      "declared_license": "Apache-2.0",
+      "observed_root_license_family": "Apache-2.0",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "267d520a2c997596f88b750ef95cb434febb814c",
+      "license_url": "https://github.com/bimwright/dwg-mcp/blob/c04af1ff5ae36f0851ed928c3c3b0766cd36b71a/LICENSE",
+      "integration_mode": "reference-and-adapt"
+    },
+    {
+      "repo": "CEXT-Dan/PyRx",
+      "pinned_sha": "8f102b2b06203d39fd8bf2fc966dbb7bce6bc45d",
+      "pin_exists": true,
+      "declared_license": "LGPL-3.0",
+      "observed_root_license_family": "LGPL-3.0",
+      "license_path": "LICENSE.txt",
+      "license_git_blob_sha": "33bb36808dc118661fb0999f79f1c9ce5f5aa566",
+      "license_url": "https://github.com/CEXT-Dan/PyRx/blob/8f102b2b06203d39fd8bf2fc966dbb7bce6bc45d/LICENSE.txt",
+      "integration_mode": "external-dependency"
+    },
+    {
+      "repo": "FsDiG/Fs.Fox.CAD",
+      "pinned_sha": "622a0e8b5f5769e17bc5bad4f7a47f958915658c",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "443b80893e715b212330be8cb65a4a08c60b7b2f",
+      "license_url": "https://github.com/FsDiG/Fs.Fox.CAD/blob/622a0e8b5f5769e17bc5bad4f7a47f958915658c/LICENSE",
+      "integration_mode": "nuget-or-adapt"
+    },
+    {
+      "repo": "beiming183-cloud/AutoCAD-MCP",
+      "pinned_sha": "11f7c47e5038796a20451b38b23032e625b5aa26",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "527d3a3bdde948d5cd8e9693e2ddd6d8f98bc823",
+      "license_url": "https://github.com/beiming183-cloud/AutoCAD-MCP/blob/11f7c47e5038796a20451b38b23032e625b5aa26/LICENSE",
+      "integration_mode": "reference-and-adapt"
+    },
+    {
+      "repo": "LokmenoWer/best-cad-mcp",
+      "pinned_sha": "0801ade2260195a5399fa5027ee925b72fc3e259",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "3c2e02eecc3e7ba3115b2a228099aea5ead0c746",
+      "license_url": "https://github.com/LokmenoWer/best-cad-mcp/blob/0801ade2260195a5399fa5027ee925b72fc3e259/LICENSE",
+      "integration_mode": "reference-and-adapt"
+    },
+    {
+      "repo": "jeremylongshore/cad-ai-agent",
+      "pinned_sha": "0866c8e8a5bc8c4f820d4b074bcc09c34d9c85be",
+      "pin_exists": true,
+      "declared_license": "Apache-2.0",
+      "observed_root_license_family": "Apache-2.0",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "license_url": "https://github.com/jeremylongshore/cad-ai-agent/blob/0866c8e8a5bc8c4f820d4b074bcc09c34d9c85be/LICENSE",
+      "integration_mode": "reference-and-adapt"
+    },
+    {
+      "repo": "dalingo81/ZWCAD-MCP",
+      "pinned_sha": "49883a983e665900bbc37b9f200daf99144818e1",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "527d3a3bdde948d5cd8e9693e2ddd6d8f98bc823",
+      "license_url": "https://github.com/dalingo81/ZWCAD-MCP/blob/49883a983e665900bbc37b9f200daf99144818e1/LICENSE",
+      "integration_mode": "fallback-adapter-reference"
+    },
+    {
+      "repo": "mozman/ezdxf",
+      "pinned_sha": "d6f2ac10caeddc712ed1824aaeb3b9c050de4a04",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "33a77673a9100f1f8553745ac6c924a6b8e58410",
+      "license_url": "https://github.com/mozman/ezdxf/blob/d6f2ac10caeddc712ed1824aaeb3b9c050de4a04/LICENSE",
+      "integration_mode": "python-dependency"
+    },
+    {
+      "repo": "DomCR/ACadSharp",
+      "pinned_sha": "3feabba4b2cbcb226f10b288aaee32442b03af6f",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "038944640f8f76b5a0577d241b37db23dd6c23bd",
+      "license_url": "https://github.com/DomCR/ACadSharp/blob/3feabba4b2cbcb226f10b288aaee32442b03af6f/LICENSE",
+      "integration_mode": "dotnet-dependency-or-adapt"
+    },
+    {
+      "repo": "LibreDWG/libredwg",
+      "pinned_sha": "34f02f54b9aacb5708c1d3d2070efb3e4b2d8c43",
+      "pin_exists": true,
+      "declared_license": "GPL-3.0",
+      "observed_root_license_family": "GPL-3.0",
+      "license_path": "COPYING",
+      "license_git_blob_sha": "94a9ed024d3859793618152ea559a168bbcbb5e2",
+      "license_url": "https://github.com/LibreDWG/libredwg/blob/34f02f54b9aacb5708c1d3d2070efb3e4b2d8c43/COPYING",
+      "integration_mode": "external-executable-only"
+    },
+    {
+      "repo": "U-C4N/Autocad-MCP",
+      "pinned_sha": "abc2a82e7128358b9e228a7d9442b37019aa3fe5",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "745aae3580c1da8f5bd5622e5a62881c0677c766",
+      "license_url": "https://github.com/U-C4N/Autocad-MCP/blob/abc2a82e7128358b9e228a7d9442b37019aa3fe5/LICENSE",
+      "integration_mode": "reference-and-test-oracle"
+    },
+    {
+      "repo": "AnCode666/multiCAD-mcp",
+      "pinned_sha": "360ec77c970ec95a962bd4d0a3238715ee78dd7c",
+      "pin_exists": true,
+      "declared_license": "Apache-2.0",
+      "observed_root_license_family": "Apache-2.0",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "d2876604ea5d40171ff91062b6b648d090f191d8",
+      "license_url": "https://github.com/AnCode666/multiCAD-mcp/blob/360ec77c970ec95a962bd4d0a3238715ee78dd7c/LICENSE",
+      "integration_mode": "reference-and-compatibility-matrix"
+    },
+    {
+      "repo": "puran-water/autocad-mcp",
+      "pinned_sha": "95476a33a1c246308326eb4709d6379ef2efdbc1",
+      "pin_exists": true,
+      "declared_license": "MIT",
+      "observed_root_license_family": "MIT",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "527d3a3bdde948d5cd8e9693e2ddd6d8f98bc823",
+      "license_url": "https://github.com/puran-water/autocad-mcp/blob/95476a33a1c246308326eb4709d6379ef2efdbc1/LICENSE",
+      "integration_mode": "fallback-reference"
+    },
+    {
+      "repo": "Psalmustrack/lambdacad-mcp",
+      "pinned_sha": "454c80416c01338048515dd18cfc1d82d9742d4b",
+      "pin_exists": true,
+      "declared_license": "Apache-2.0",
+      "observed_root_license_family": "Apache-2.0",
+      "license_path": "LICENSE",
+      "license_git_blob_sha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "license_url": "https://github.com/Psalmustrack/lambdacad-mcp/blob/454c80416c01338048515dd18cfc1d82d9742d4b/LICENSE",
+      "integration_mode": "reference-and-coverage-oracle"
+    }
+  ]
+}
