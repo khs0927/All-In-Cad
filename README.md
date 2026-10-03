@@ -100,3 +100,7 @@ After AutoCAD 2027 installation is complete:
 ```
 
 The next live milestone is the same capability matrix across Autodesk Official MCP, `bimwright/dwg-mcp` 2027, PyRx in AutoCAD 2027, and PyRx in ZWCAD 2026.
+
+### Extraction probe evidence
+
+Capability reports retain `available` for extraction routing, but it means installation detection only. Reports identify `verification_kind=installation_detection`, execution and fixture status as `NOT_RUN`, and `execution_allowed=false`. Even a supplied version or a detected executable is not a validated DWG capability. Actual extraction results and independent fixture verification must be recorded separately; these probes never authorize CAD mutations.

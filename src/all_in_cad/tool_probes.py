@@ -51,11 +51,17 @@ def detect_tool_probes(
 
 
 def capability_report(probes: dict[ExtractionLane, ToolProbe]) -> dict[str, dict[str, object]]:
+    """Report installation detection only; availability is not execution evidence."""
     return {
         lane.value: {
             "available": bool(probe.available),
             "executable": probe.executable,
             "version": probe.version,
+            "verification_kind": "installation_detection",
+            "detection_status": "DETECTED" if probe.available else "NOT_DETECTED",
+            "execution_status": "NOT_RUN",
+            "fixture_status": "NOT_RUN",
+            "execution_allowed": False,
         }
         for lane, probe in sorted(probes.items(), key=lambda item: item[0].value)
     }
