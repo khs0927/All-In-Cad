@@ -1,5 +1,5 @@
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
 
 from all_in_cad.models import (
     ChangeOperation,
@@ -10,8 +10,6 @@ from all_in_cad.models import (
     HostKind,
     SourceBindingRef,
 )
-
-
 
 
 def _source_binding(document_id: str = "doc-1") -> SourceBindingRef:
