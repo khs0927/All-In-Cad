@@ -1,6 +1,7 @@
 name: core-ci
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main", "agent/**"]
   pull_request:
