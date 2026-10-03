@@ -17,11 +17,40 @@ Subcommands
             and the width-direction pick
 ``opening`` one wall opening boundary + symbol (LINE only), placed on a
             reference wall line
+``hatch``   one hatch region, written as a closed boundary polyline plus the
+            pattern contract as XDATA -- deliberately never a HATCH entity
+``dim``     one dimension, measured and read back out of the file
+``text``    one TEXT or MTEXT annotation
+``block``   one block definition and one instance of it, in ``flatten``
+            (default, stays measurable) or ``insert`` (a real INSERT
+            reference, which hides its geometry from downstream measurement)
+``layers``  LAYER table entries, in creation order, with asserted attributes
 ``verify``  read a drawing back and check the things that must still be true
 
 Every subcommand requires ``--out`` (the DXF to write) except ``verify``, which
 reads the drawing named by ``--in``. ``--json`` switches stdout to a single
 machine-readable JSON object.
+
+REACHABILITY
+------------
+All thirteen recorder modules are reachable from this CLI: ``wall``, ``door``,
+``plan`` (wall+door), ``window``, ``opening``, ``hatch``, ``dim``, ``text``,
+``block``, ``layers``; ``transaction`` and ``host_dxf`` run inside every write;
+``machine`` is the input driver behind the host adapter; ``verify`` is this
+module. ``verify`` has one ``--only`` scope per recording module and one
+``--expect-*`` argument per module, so a recording made here can be verified
+here -- a subcommand that cannot be verified is not finished.
+
+INSERT IS ALLOWED, AND WHAT REPLACED THE BAN
+--------------------------------------------
+``FORBIDDEN_DXF_TYPES`` used to contain ``INSERT`` and no longer does, because
+``block --mode insert`` writes one and a tool that rejects its own output is
+not a verifier. ``HATCH`` stays forbidden, on different evidence: the hatch
+recorder chose a polyline plus a contract precisely because nothing downstream
+can measure a HATCH. An INSERT's cost is instead a named check,
+``insert_downstream_visibility``, which reports the entity count and length the
+INSERT hides and FAILS until the caller passes ``--allow-hidden-insert``. See
+:data:`INSERT_VISIBILITY_NOTE`.
 
 EXIT CODES (contract, also asserted by cli_test.py)
 ---------------------------------------------------
@@ -55,12 +84,15 @@ defect lived in the composition layer, not in the wall or door agents.
 
 So: **creating a drawing and replacing one are different contracts.**
 
-* ``wall`` / ``door`` / ``plan`` / ``window`` / ``opening`` CREATE by default.
+* ``wall`` / ``door`` / ``plan`` / ``window`` / ``opening`` / ``hatch`` / ``dim`` /
+  ``text`` / ``block`` / ``layers`` CREATE by default.
   If ``--out`` already exists, the command refuses with exit code 2 and does
   not touch the file.
 * ``--force`` is the only way to replace an existing drawing, and the same flag
   means the same thing in every subcommand. It is one shared
-  ``_add_out_arguments``, not five.
+  ``_add_out_arguments``, called by all ten writers rather than
+  re-implemented per module: if one subcommand had its own idea of overwrite,
+  the composition-level data-loss defect would simply move there.
 * Nothing is ever appended. Appending would still be an unrequested mutation of
   an existing drawing, and it would produce a file whose contents no single
   invocation declared -- the entity counts and layer semantics the recorders
@@ -126,6 +158,27 @@ from typing import Any
 try:  # package-relative import (normal case)
     from ..semantic_layers import LayerSemantic, classify_layer
     from ..topology import Point2D
+    from .block import (
+        BlockInsertMode,
+        BlockValidationError,
+        arc_entity,
+        line_entity,
+        make_block_definition,
+        make_block_insert,
+        write_block_definition,
+        write_block_insert,
+    )
+    from .dim import (
+        DimGeometryError,
+        DimKind,
+        make_dim,
+        ensure_dim,
+        rendered_text as dim_rendered_text,
+        write_dim,
+    )
+    from .dim import (
+        DEFAULT_LAYERS as DEFAULT_DIM_LAYERS,
+    )
     from .door import (
         DEFAULT_FRAME_WIDTH_MM,
         DoorGeometryError,
@@ -139,6 +192,18 @@ try:  # package-relative import (normal case)
     )
     from .door import (
         DEFAULT_THICKNESS_MM as DEFAULT_DOOR_THICKNESS_MM,
+    )
+    from .hatch import (
+        HatchValidationError,
+        make_hatch,
+        read_hatch_metadata,
+        write_hatch,
+    )
+    from .layer import (
+        DestructiveLayerChange,
+        LayerValidationError,
+        make_layer,
+        write_layers,
     )
     from .opening import (
         LAYER_MAPPING_RESOLVED as OPENING_LAYER_MAPPING_RESOLVED,
@@ -156,8 +221,15 @@ try:  # package-relative import (normal case)
     from .transaction import (
         FileState,
         TransactionError,
+        VerificationFailed,
         capture_state,
         dxf_verifier,
+    )
+    from .text import (
+        TextValidationError,
+        make_mtext,
+        make_text,
+        write_text,
     )
     from .transaction import (
         begin as begin_transaction,
@@ -180,6 +252,45 @@ try:  # package-relative import (normal case)
         write_window,
     )
 except ImportError:  # pragma: no cover - direct/flat execution fallback
+    from all_in_cad.recorder.block import (  # type: ignore[no-redef]
+        BlockInsertMode,
+        BlockValidationError,
+        arc_entity,
+        line_entity,
+        make_block_definition,
+        make_block_insert,
+        write_block_definition,
+        write_block_insert,
+    )
+    from all_in_cad.recorder.dim import (  # type: ignore[no-redef]
+        DimGeometryError,
+        DimKind,
+        make_dim,
+        ensure_dim,
+        rendered_text as dim_rendered_text,
+        write_dim,
+    )
+    from all_in_cad.recorder.dim import (  # type: ignore[no-redef]
+        DEFAULT_LAYERS as DEFAULT_DIM_LAYERS,
+    )
+    from all_in_cad.recorder.hatch import (  # type: ignore[no-redef]
+        HatchValidationError,
+        make_hatch,
+        read_hatch_metadata,
+        write_hatch,
+    )
+    from all_in_cad.recorder.layer import (  # type: ignore[no-redef]
+        DestructiveLayerChange,
+        LayerValidationError,
+        make_layer,
+        write_layers,
+    )
+    from all_in_cad.recorder.text import (  # type: ignore[no-redef]
+        TextValidationError,
+        make_mtext,
+        make_text,
+        write_text,
+    )
     from all_in_cad.recorder.door import (  # type: ignore[no-redef]
         DEFAULT_FRAME_WIDTH_MM,
         DoorGeometryError,
@@ -210,6 +321,7 @@ except ImportError:  # pragma: no cover - direct/flat execution fallback
     from all_in_cad.recorder.transaction import (  # type: ignore[no-redef]
         FileState,
         TransactionError,
+        VerificationFailed,
         capture_state,
         dxf_verifier,
     )
@@ -243,6 +355,9 @@ __all__ = [
     "EXIT_WRITE_FAILED",
     "BYTE_IDEMPOTENT",
     "OPENING_LAYER_MAPPING_NOTE",
+    "FORBIDDEN_DXF_TYPES",
+    "INSERT_VISIBILITY_NOTE",
+    "UNRESOLVED_LAYER_NOTE",
     "CliError",
     "WriteError",
     "main",
@@ -277,7 +392,75 @@ BYTE_IDEMPOTENCY_NOTE = (
 DEFAULT_HINGE_TOLERANCE_MM = 1.0
 
 #: Entity types this recorder must never produce, and which ``verify`` rejects.
-FORBIDDEN_DXF_TYPES = ("INSERT", "HATCH")
+#:
+#: [DESIGN] ``INSERT`` was on this list and has been REMOVED, deliberately and
+#: with a reason. It was not decoration: ``block.make_block_insert(...,
+#: mode=BlockInsertMode.INSERT)`` writes a real ``INSERT`` entity, so a
+#: recording made by this repository was rejected by this repository's own
+#: verifier -- the same class of divergence as the earlier ``"DXF only"``/DWG
+#: incident. A tool that refuses its own output is not a verifier.
+#:
+#: ``HATCH`` STAYS, and the two are not the same case. The hatch module chose a
+#: closed boundary polyline plus an XDATA pattern contract *because* this list
+#: exists: ``extraction_runtime._normalize_ezdxf_entity`` has no contract for
+#: a HATCH, so a HATCH here would be geometry nothing downstream can measure.
+#: The INSERT case is the opposite -- the block module reports, measures and
+#: records exactly what an INSERT hides (``visible_downstream``,
+#: ``contributed_segments``, ``hidden_length_mm``), so its cost is knowable and
+#: belongs in a CHECK, not in a ban. See :data:`INSERT_VISIBILITY_NOTE` and the
+#: ``insert_downstream_visibility`` check.
+FORBIDDEN_DXF_TYPES = ("HATCH",)
+
+#: [DESIGN] How ``verify`` treats an ``INSERT`` now that one is allowed.
+#:
+#: An ``INSERT`` conceals its definition from every downstream measurement:
+#: ``topology`` sees the reference, not the four lines inside it. That is a real
+#: cost and must never be silent, so an ``INSERT`` in the drawing FAILS
+#: ``insert_downstream_visibility`` unless the caller acknowledges it with
+#: ``--allow-hidden-insert`` -- which is exactly the state ``block --mode
+#: insert`` writes, and the report then carries the measured hidden segment
+#: count and length rather than hiding them.
+#:
+#: A ban could not have said any of this: it could only have said "no", to a
+#: recorder whose documented, opt-in job is to write one.
+INSERT_VISIBILITY_NOTE = (
+    "an INSERT hides its block definition from downstream measurement. This "
+    "drawing contains one, which contributes 0 segments downstream. Pass "
+    "--allow-hidden-insert to record that this was intended (it is what "
+    "'block --mode insert' writes); the measured hidden segment count and "
+    "length stay in the report either way."
+)
+
+#: [DESIGN] ``--unresolved-layer`` exists because two modules refuse to invent
+#: a layer name: ``hatch.HATCH_LAYER_STATUS`` and ``text.TEXT_LAYER_STATUS`` are
+#: both ``"UNRESOLVED"``, and ``block.OPENING_BLOCK_LAYER_STATUS`` with them.
+#: Those recorders REQUIRE the caller to name the layer. How each one then
+#: treats a name that classifies as ``UNKNOWN`` is NOT the same, so
+#: ``--unresolved-layer`` means only what the two permissive modules mean by it:
+#:   * ``hatch`` and ``text`` record the caller-named layer and report its
+#:     ``LayerSemantic``, so an UNKNOWN name is a real, documented state there --
+#:     exactly like the opening recorder's ``TEMP-`` layers. Declaring it is
+#:     explicit, per-drawing and reported in ``layer_semantics_mapped``; an
+#:     UNDECLARED unknown layer is still a FAIL.
+#:   * ``block`` is the opposite: ``block._validate_layer`` REFUSES any name that
+#:     ``classify_layer`` maps to UNKNOWN (the sole exception is the opt-in
+#:     OBSERVED XiCAD spelling ``"0"`` behind ``allow_observed_layer_zero=True``).
+#:     So a caller-named UNKNOWN layer is never a valid ``block --entity-layer``
+#:     value, and ``CONVENTION_BLOCK_LAYERS`` there is a recommendation in the
+#:     refusal message, not the membership test.
+#: This string is surfaced to users verbatim in ``verify --json`` under
+#: ``unresolved_layer_note``, so it must not claim block behaves like hatch/text.
+UNRESOLVED_LAYER_NOTE = (
+    "declared as an unresolved mapping on purpose (hatch and text report "
+    "LAYER_STATUS == 'UNRESOLVED' and make the caller name the layer, which "
+    "they then record and classify rather than refuse), so it is excluded from "
+    "the layer_semantics_mapped check and reported there. Any unknown layer "
+    "that is NOT declared is still a FAIL. Note this does not apply to block: "
+    "block.OPENING_BLOCK_LAYER_STATUS is also 'UNRESOLVED', but block refuses "
+    "any name that classifies as UNKNOWN, so block --entity-layer requires a "
+    "convention name (CONVENTION_BLOCK_LAYERS is recommended, not enforced as "
+    "a list)."
+)
 
 #: [UNRESOLVED] The opening recorder ships ``TEMP-`` prefixed layers because
 #: configs/architectural-layers.json has no opening entry, and
@@ -835,6 +1018,237 @@ def _add_opening_arguments(parser: argparse.ArgumentParser) -> None:
 # ---------------------------------------------------------------------------
 # geometry construction (delegates validation to the wall / door agents)
 # ---------------------------------------------------------------------------
+
+
+def _add_hatch_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--boundary",
+        nargs="+",
+        type=float,
+        metavar="XY",
+        required=True,
+        help=(
+            "boundary ring as flat X Y numbers, at least three pairs, e.g. "
+            "--boundary 0 0 2000 0 2000 1000 0 1000. Implicitly closed: do NOT "
+            "repeat the first point"
+        ),
+    )
+    parser.add_argument(
+        "--layer",
+        required=True,
+        metavar="NAME",
+        help=(
+            "layer for the boundary polyline. REQUIRED and undefaulted because "
+            "no hatch layer is observed in configs/architectural-layers.json; "
+            "the module refuses to invent one"
+        ),
+    )
+    parser.add_argument(
+        "--pattern-name",
+        required=True,
+        metavar="NAME",
+        help=(
+            "pattern contract name, e.g. ANSI31. REQUIRED: the hatch module's "
+            "all-defaults call is an invalid state, so an unnamed pattern is "
+            "refused rather than drawn blank"
+        ),
+    )
+    parser.add_argument("--scale", type=float, default=1.0, metavar="F", help="pattern scale (default: 1.0)")
+    parser.add_argument(
+        "--angle-deg", type=float, default=0.0, metavar="DEG", help="pattern angle (default: 0)"
+    )
+    parser.add_argument("--name", default="", metavar="TEXT", help="optional hatch name (default: empty)")
+    parser.add_argument(
+        "--min-area",
+        type=float,
+        default=0.0,
+        metavar="MM2",
+        help="reject a boundary whose enclosed area is below this (default: 0)",
+    )
+    parser.add_argument(
+        "--allow-self-intersection",
+        action="store_true",
+        help="accept a self-intersecting boundary instead of rejecting it",
+    )
+
+
+def _add_dim_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--p1", nargs=2, type=float, metavar=("X", "Y"), required=True,
+        help="first measured point, e.g. --p1 0 0",
+    )
+    parser.add_argument(
+        "--p2", nargs=2, type=float, metavar=("X", "Y"), required=True,
+        help="second measured point; coincident with --p1 is rejected",
+    )
+    parser.add_argument(
+        "--kind",
+        choices=tuple(kind.value for kind in DimKind),
+        default=DimKind.LINEAR_HORIZONTAL.value,
+        help="dimension shape (default: linear_horizontal)",
+    )
+    parser.add_argument(
+        "--offset-mm", type=float, default=800.0, metavar="MM",
+        help="distance of the dimension line from the measured points (default: 800)",
+    )
+    parser.add_argument(
+        "--text", default=None, metavar="TEXT",
+        help=(
+            "override the measured string. Omit it to let the recorder measure "
+            "and inject; use '<>' to delegate formatting to the renderer"
+        ),
+    )
+    parser.add_argument(
+        "--decimals", type=int, default=2, metavar="N",
+        help="decimals in the measured string (default: 2)",
+    )
+    parser.add_argument(
+        "--layer", default=DEFAULT_DIM_LAYERS[0], metavar="NAME",
+        help=(
+            f"dimension layer (default: {DEFAULT_DIM_LAYERS[0]}). This one IS "
+            "observed in configs/architectural-layers.json, which is why it has "
+            "a default and hatch/text/block do not"
+        ),
+    )
+    parser.add_argument(
+        "--allow-duplicate",
+        action="store_true",
+        help=(
+            "use the one-shot write path and place a second dimension on the "
+            "same geometry. Default is the idempotent ensure path"
+        ),
+    )
+
+
+def _add_text_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--content", required=True, metavar="TEXT",
+        help="annotation text. For multi-line, use --mtext (a TEXT entity cannot hold a break)",
+    )
+    parser.add_argument(
+        "--insert", nargs=2, type=float, metavar=("X", "Y"), required=True,
+        help="insertion point, e.g. --insert 100 200",
+    )
+    parser.add_argument(
+        "--layer", required=True, metavar="NAME",
+        help=(
+            "layer for the text entity. REQUIRED and undefaulted because no "
+            "text layer is observed in configs/architectural-layers.json"
+        ),
+    )
+    parser.add_argument("--height", type=float, default=2.5, metavar="MM", help="cap height (default: 2.5)")
+    parser.add_argument(
+        "--rotation-deg", type=float, default=0.0, metavar="DEG", help="rotation (default: 0)"
+    )
+    parser.add_argument("--style", default="Standard", metavar="NAME", help="text style (default: Standard)")
+    parser.add_argument(
+        "--mtext", action="store_true",
+        help="write an MTEXT (multi-line capable) instead of a single-line TEXT",
+    )
+    parser.add_argument(
+        "--width-mm", type=float, default=None, metavar="MM",
+        help="MTEXT wrap column. Opt-in: a wrap column nobody asked for is a silent change",
+    )
+    parser.add_argument(
+        "--attachment-point", type=int, default=1, metavar="N",
+        help="MTEXT attachment point, 1-10 (default: 1)",
+    )
+    parser.add_argument("--halign", type=int, default=0, metavar="N", help="TEXT horizontal alignment (default: 0)")
+    parser.add_argument("--valign", type=int, default=0, metavar="N", help="TEXT vertical alignment (default: 0)")
+    parser.add_argument("--role", default="note", metavar="NAME", help="recorded role (default: note)")
+
+
+def _add_block_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--name", required=True, metavar="NAME", help="block definition name")
+    parser.add_argument(
+        "--line",
+        action="append",
+        nargs=4,
+        type=float,
+        metavar=("X1", "Y1", "X2", "Y2"),
+        default=None,
+        help="straight edge in block-local coordinates; repeatable",
+    )
+    parser.add_argument(
+        "--arc",
+        action="append",
+        nargs=5,
+        type=float,
+        metavar=("CX", "CY", "R", "A0", "A1"),
+        default=None,
+        help="arc edge, angles in degrees CCW; repeatable",
+    )
+    parser.add_argument(
+        "--base", nargs=2, type=float, metavar=("X", "Y"), default=(0.0, 0.0),
+        help="block base point (default: 0 0)",
+    )
+    parser.add_argument(
+        "--entity-layer", required=True, metavar="NAME",
+        help=(
+            "layer for the block's own entities. REQUIRED and undefaulted: "
+            "block.OPENING_BLOCK_LAYER_STATUS is UNRESOLVED, so the caller "
+            "names the layer. Any name that classifies as UNKNOWN is refused, "
+            "so pass a convention name; recommended: WAL1, WAL2, WAL3, DOOR, "
+            "DOOR_ELE, WIN, WINBAR, WINELE (CONVENTION_BLOCK_LAYERS)"
+        ),
+    )
+    parser.add_argument(
+        "--location", nargs=2, type=float, metavar=("X", "Y"), default=(0.0, 0.0),
+        help="where the instance is placed in world millimetres (default: 0 0)",
+    )
+    parser.add_argument(
+        "--instance-layer", default=None, metavar="NAME",
+        help="layer for the INSERT/flattened entities; derived from content when omitted",
+    )
+    parser.add_argument(
+        "--rotation-deg", type=float, default=0.0, metavar="DEG", help="instance rotation (default: 0)"
+    )
+    parser.add_argument("--scale", type=float, default=1.0, metavar="F", help="instance scale (default: 1.0)")
+    parser.add_argument(
+        "--mode",
+        choices=tuple(mode.value for mode in BlockInsertMode),
+        default=BlockInsertMode.FLATTEN.value,
+        help=(
+            "flatten (default, everything stays measurable) or insert (a real "
+            "INSERT reference, which contributes 0 segments downstream and "
+            "needs 'verify --allow-hidden-insert' to pass)"
+        ),
+    )
+
+
+def _add_layers_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--layer", action="append", default=None, metavar="NAME",
+        help="layer to create, in this order; repeatable",
+    )
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=None,
+        metavar="NAME.KEY=VALUE",
+        help=(
+            "assert one layer attribute, e.g. --set WAL1.color=1. Keys: "
+            + ", ".join(_HELP_SET_KEYS)
+            + ". Repeatable; the layer is created if it is not there"
+        ),
+    )
+    parser.add_argument(
+        "--allow-overwrite",
+        action="store_true",
+        help=(
+            "permit changing an existing layer's attributes. Default refuses "
+            "with DestructiveLayerChange, because a layer change applies to a "
+            "whole drawing"
+        ),
+    )
+    parser.add_argument(
+        "--no-protect-layer0",
+        action="store_true",
+        help=(
+            "drop the extra guard on the layer literally named '0'. Default "
+            "protects it even with --allow-overwrite"
+        ),
+    )
 
 
 def _build_wall(args: argparse.Namespace) -> Any:
@@ -1417,11 +1831,650 @@ def cmd_opening(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# subcommand: hatch
+# ---------------------------------------------------------------------------
+
+
+def _quote_argv(value: Any) -> str:
+    """Quote one value for the printed ``verify_hint`` command line.
+
+    POSIX single-quote rules, deliberately, because the hint has to survive
+    being copied on Windows too: inside single quotes a backslash is literal,
+    so a Windows path is not mangled, and an annotation with spaces or an
+    apostrophe is still one argument. A hint that has to be edited before it
+    runs is not a hint.
+    """
+    return "'" + str(value).replace("'", "'\"'\"'") + "'"
+
+
+def _verify_hint(path: Path, *parts: str) -> str:
+    return " ".join(["verify", "--in", _quote_argv(path), *parts])
+
+
+def _recorded_content(record: Any) -> tuple[tuple[str, ...], dict[str, int]]:
+    """(modelspace handles, layer counts) from ANY recorder's record.
+
+    Shared on purpose. The five modules added here return four different
+    record shapes -- ``handles()`` + ``snapshots``, a single ``handle`` field,
+    a ``layer_counts()`` method, and a table-order record with no entities at
+    all -- and a per-command re-implementation is how one subcommand ends up
+    reporting a count the others do not.
+    """
+    handles: tuple[str, ...]
+    if hasattr(record, "handles"):
+        handles = tuple(record.handles())
+    elif getattr(record, "handle", None):
+        handles = (str(record.handle),)
+    else:
+        handles = ()
+    counts: dict[str, int] = {}
+    layer_counts = getattr(record, "layer_counts", None)
+    if callable(layer_counts):
+        counts = {str(k): int(v) for k, v in layer_counts().items()}
+    elif isinstance(layer_counts, dict):
+        counts = {str(k): int(v) for k, v in layer_counts.items()}
+    elif hasattr(record, "snapshots"):
+        for snapshot in record.snapshots:
+            counts[snapshot.layer] = counts.get(snapshot.layer, 0) + 1
+    elif getattr(record, "layer", None):
+        counts[str(record.layer)] = max(1, len(handles))
+    return handles, counts
+
+
+def _build_hatch(args: argparse.Namespace) -> Any:
+    values = list(args.boundary)
+    if len(values) < 6 or len(values) % 2:
+        raise CliError(
+            f"--boundary needs at least three X Y pairs, got {len(values)} numbers"
+        )
+    boundary = [(values[i], values[i + 1]) for i in range(0, len(values), 2)]
+    try:
+        return make_hatch(
+            boundary,
+            layer=args.layer,
+            name=args.name,
+            scale=args.scale,
+            angle_deg=args.angle_deg,
+            pattern_name=args.pattern_name,
+            allow_self_intersection=args.allow_self_intersection,
+            min_area_mm2=args.min_area,
+        )
+    except (HatchValidationError, ValueError) as exc:
+        raise CliError(f"hatch rejected: {exc}") from exc
+
+
+def cmd_hatch(args: argparse.Namespace) -> int:
+    hatch = _build_hatch(args)
+    doc = _new_document()
+    record = write_hatch(doc, hatch)
+    path = _resolve_output_path(args.out)
+    before = _refuse_if_present(path, args.force, "hatch")
+
+    def save(target: Path) -> tuple[str, ...]:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        doc.saveas(target)
+        return record.handles()
+
+    handles, layer_counts = _recorded_content(record)
+    _write_output(path, before=before, save=save, required_layers=sorted(layer_counts))
+    payload = {
+        "command": "hatch",
+        "ok": True,
+        **_output_note(args, path, before),
+        "dxf_version": DXF_WRITE_VERSION,
+        "layers": [record.layer],
+        "entity_count": len(handles),
+        "layer_counts": layer_counts,
+        "handles": list(handles),
+        "hatch": {
+            "area_mm2": record.area_mm2,
+            "perimeter_mm": record.perimeter_mm,
+            "pattern": record.pattern.name,
+            "scale": record.pattern.scale,
+            "angle_deg": record.pattern.angle_deg,
+            "self_intersecting": record.self_intersecting,
+            "vertices": len(hatch.boundary),
+        },
+        # No HATCH entity is written -- the pattern contract is XDATA on a
+        # closed boundary polyline. Reported so nobody has to read the module
+        # to learn it, and so a HATCH appearing in this file is unmistakably
+        # not ours.
+        "entity_representation": "closed LWPOLYLINE + XDATA pattern contract",
+        "layer_status": "UNRESOLVED: --layer is required because no hatch layer "
+        "is observed in configs/architectural-layers.json",
+        # A hatch layer usually classifies as UNKNOWN, which layer_semantics_mapped
+        # FAILs by default. The verification command for this exact drawing is
+        # printed, with the declaration the user has to pass -- stated, not
+        # implied.
+        "verify_hint": _verify_hint(
+            path,
+            "--only",
+            "hatch",
+            "--unresolved-layer",
+            _quote_argv(record.layer),
+            "--expect-hatch-area",
+            f"{record.area_mm2:g}",
+            "--expect-hatch-pattern",
+            _quote_argv(record.pattern.name),
+        ),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_written(
+            "hatch",
+            path,
+            before,
+            f"hatch area {record.area_mm2:g} mm2, perimeter "
+            f"{record.perimeter_mm:g} mm, {len(hatch.boundary)} vertices\n"
+            f"  pattern {record.pattern.name} scale {record.pattern.scale:g} "
+            f"angle {record.pattern.angle_deg:g} deg, on layer {record.layer}\n"
+            f"  written as a closed LWPOLYLINE with the pattern contract as "
+            f"XDATA (no HATCH entity)\n"
+            f"  verify with: {payload['verify_hint']}",
+            len(handles),
+            layer_counts,
+        )
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# subcommand: dim
+# ---------------------------------------------------------------------------
+
+
+def _build_dim(args: argparse.Namespace) -> Any:
+    try:
+        return make_dim(
+            _point(args.p1, "--p1"),
+            _point(args.p2, "--p2"),
+            args.kind,
+            offset_mm=args.offset_mm,
+            text=args.text,
+            decimals=args.decimals,
+            layer=args.layer,
+        )
+    except (DimGeometryError, ValueError) as exc:
+        raise CliError(f"dimension rejected: {exc}") from exc
+
+
+def cmd_dim(args: argparse.Namespace) -> int:
+    dim = _build_dim(args)
+    doc = _new_document()
+    # ensure_dim is the idempotent path and what dim.py says callers normally
+    # want; --allow-duplicate is the deliberate way to place a second
+    # dimension on the same geometry. Reporting `action` keeps the difference
+    # visible instead of leaving it to be guessed.
+    if args.allow_duplicate:
+        record = write_dim(doc, dim, (args.layer, args.layer))
+    else:
+        record = ensure_dim(doc, dim, (args.layer, args.layer))
+    path = _resolve_output_path(args.out)
+    before = _refuse_if_present(path, args.force, "dim")
+
+    def save(target: Path) -> tuple[str, ...]:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        doc.saveas(target)
+        return (record.handle,)
+
+    _write_output(path, before=before, save=save, required_layers=[record.layer])
+    payload = {
+        "command": "dim",
+        "ok": True,
+        **_output_note(args, path, before),
+        "dxf_version": DXF_WRITE_VERSION,
+        "layers": [record.layer],
+        "entity_count": 1,
+        "layer_counts": {record.layer: 1},
+        "handles": [record.handle],
+        "dim": {
+            "kind": dim.kind.value,
+            "p1": [dim.p1.x, dim.p1.y],
+            "p2": [dim.p2.x, dim.p2.y],
+            "measurement_mm": record.readback_measurement,
+            "geometry_measurement_mm": dim.measured,
+            "text": record.readback_text,
+            "text_mode": record.text_mode.value,
+            "line_location": [dim.line_location.x, dim.line_location.y],
+            "block_name": record.block_name,
+            "action": record.action,
+            "verified": record.verified,
+        },
+        "verify_hint": _verify_hint(
+            path,
+            "--only",
+            "dim",
+            "--expect-dim-measurement",
+            f"{record.readback_measurement:g}",
+        ),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_written(
+            "dim",
+            path,
+            before,
+            f"{dim.kind.value} dimension, {record.readback_measurement:g} mm, "
+            f"text {record.readback_text!r} ({record.text_mode.value})\n"
+            f"  {record.action} on layer {record.layer}, block {record.block_name}\n"
+            f"  verify with: {payload['verify_hint']}",
+            1,
+            {record.layer: 1},
+        )
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# subcommand: text
+# ---------------------------------------------------------------------------
+
+
+def _build_text(args: argparse.Namespace) -> Any:
+    builder = make_mtext if args.mtext else make_text
+    try:
+        if args.mtext:
+            return builder(
+                args.content,
+                _point(args.insert, "--insert"),
+                layer=args.layer,
+                height=args.height,
+                rotation_deg=args.rotation_deg,
+                style=args.style,
+                width_mm=args.width_mm,
+                attachment_point=args.attachment_point,
+                role=args.role,
+            )
+        return builder(
+            args.content,
+            _point(args.insert, "--insert"),
+            layer=args.layer,
+            height=args.height,
+            rotation_deg=args.rotation_deg,
+            style=args.style,
+            halign=args.halign,
+            valign=args.valign,
+            role=args.role,
+        )
+    except (TextValidationError, ValueError) as exc:
+        raise CliError(f"text rejected: {exc}") from exc
+
+
+def cmd_text(args: argparse.Namespace) -> int:
+    geometry = _build_text(args)
+    doc = _new_document()
+    record = write_text(doc, geometry)
+    path = _resolve_output_path(args.out)
+    before = _refuse_if_present(path, args.force, "text")
+
+    def save(target: Path) -> tuple[str, ...]:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        doc.saveas(target)
+        return record.handles()
+
+    handles, layer_counts = _recorded_content(record)
+    _write_output(path, before=before, save=save, required_layers=sorted(layer_counts))
+    payload = {
+        "command": "text",
+        "ok": True,
+        **_output_note(args, path, before),
+        "dxf_version": DXF_WRITE_VERSION,
+        "layers": [record.layer],
+        "entity_count": len(handles),
+        "layer_counts": layer_counts,
+        "handles": list(handles),
+        "text": {
+            "kind": geometry.kind,
+            "content": geometry.content,
+            "lines": len(geometry.lines),
+            "insert": [geometry.insert.x, geometry.insert.y],
+            "height": geometry.height,
+            "rotation_deg": geometry.rotation_deg,
+            "style": geometry.style,
+            "role": geometry.role,
+        },
+        "roundtrip": {
+            "intact": record.roundtrip.intact,
+            "read_back_content": record.roundtrip.read_back_content,
+            "failures": record.roundtrip.failures(),
+        },
+        "layer_status": "UNRESOLVED: --layer is required because no text layer "
+        "is observed in configs/architectural-layers.json",
+        "verify_hint": _verify_hint(
+            path,
+            "--only",
+            "text",
+            "--unresolved-layer",
+            _quote_argv(record.layer),
+            "--expect-text-content",
+            _quote_argv(geometry.content),
+        ),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_written(
+            "text",
+            path,
+            before,
+            f"{geometry.kind} {geometry.content!r} at "
+            f"({geometry.insert.x:g},{geometry.insert.y:g}), height "
+            f"{geometry.height:g} mm, rotation {geometry.rotation_deg:g} deg\n"
+            f"  style {geometry.style}, layer {record.layer}, roundtrip "
+            f"{'intact' if record.roundtrip.intact else 'DAMAGED: ' + str(record.roundtrip.failures())}\n"
+            f"  verify with: {payload['verify_hint']}",
+            len(handles),
+            layer_counts,
+        )
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# subcommand: block
+# ---------------------------------------------------------------------------
+
+
+def _build_block(args: argparse.Namespace) -> tuple[Any, Any]:
+    if not args.line and not args.arc:
+        raise CliError("a block needs content: pass at least one --line or --arc")
+    entities: list[Any] = []
+    try:
+        for values in args.line or []:
+            if len(values) != 4:
+                raise CliError("--line needs exactly four numbers: X1 Y1 X2 Y2")
+            entities.append(
+                line_entity(
+                    (values[0], values[1]), (values[2], values[3]), layer=args.entity_layer
+                )
+            )
+        for values in args.arc or []:
+            if len(values) != 5:
+                raise CliError(
+                    "--arc needs exactly five numbers: CX CY RADIUS START_DEG END_DEG"
+                )
+            entities.append(
+                arc_entity(
+                    (values[0], values[1]),
+                    values[2],
+                    values[3],
+                    values[4],
+                    layer=args.entity_layer,
+                )
+            )
+        definition = make_block_definition(args.name, entities, base_point=_point(args.base, "--base"))
+        insert = make_block_insert(
+            definition,
+            _point(args.location, "--location"),
+            rotation_deg=args.rotation_deg,
+            scale=args.scale,
+            layer=args.instance_layer,
+            mode=BlockInsertMode(args.mode),
+        )
+    except BlockValidationError as exc:
+        raise CliError(f"block rejected: {exc}") from exc
+    return definition, insert
+
+
+def cmd_block(args: argparse.Namespace) -> int:
+    definition, insert = _build_block(args)
+    doc = _new_document()
+    definition_record = write_block_definition(doc, definition)
+    insert_record = write_block_insert(doc, insert)
+    path = _resolve_output_path(args.out)
+    before = _refuse_if_present(path, args.force, "block")
+
+    def save(target: Path) -> tuple[str, ...]:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        doc.saveas(target)
+        # Only the INSERT record's handles: the block DEFINITION's entities
+        # live in the block table, not the modelspace, and the transaction
+        # verifier looks for modelspace handles. Reporting them would make
+        # every block write fail its own read-back.
+        return insert_record.handles()
+
+    handles, layer_counts = _recorded_content(insert_record)
+    _write_output(path, before=before, save=save, required_layers=sorted(layer_counts))
+    payload = {
+        "command": "block",
+        "ok": True,
+        **_output_note(args, path, before),
+        "dxf_version": DXF_WRITE_VERSION,
+        "layers": sorted(set(layer_counts)),
+        "entity_count": len(handles),
+        "layer_counts": layer_counts,
+        "handles": list(handles),
+        "block": {
+            "name": definition.name,
+            "mode": insert_record.mode.value,
+            "base_point": [definition.base_point.x, definition.base_point.y],
+            "location": [insert.location.x, insert.location.y],
+            "rotation_deg": insert.rotation_deg,
+            "scale": insert.scale,
+            "definition_entities": definition_record.entity_count,
+            "definition_length_mm": definition_record.measured_length_mm,
+            "insert_layer": insert_record.layer,
+            "entity_layer": args.entity_layer,
+        },
+        # The downstream visibility contract, reported rather than assumed.
+        "visible_downstream": insert_record.visible_downstream,
+        "contributed_segments": insert_record.contributed_segments,
+        "contributed_length_mm": insert_record.contributed_length_mm,
+        "hidden_segments": insert_record.hidden_segments,
+        "hidden_length_mm": insert_record.hidden_length_mm,
+        "downstream_contract": insert_record.downstream_contract,
+        "verify_hint": _verify_hint(
+            path,
+            "--only",
+            "block",
+            "--expect-block-name",
+            _quote_argv(definition.name),
+            *(["--allow-hidden-insert"] if insert_record.mode is BlockInsertMode.INSERT else []),
+        ),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        lines = [
+            f"block {definition.name!r}: {definition_record.entity_count} entities, "
+            f"{definition_record.measured_length_mm:g} mm, mode {insert_record.mode.value}",
+            f"  at ({insert.location.x:g},{insert.location.y:g}), rotation "
+            f"{insert.rotation_deg:g} deg, scale {insert.scale:g}",
+            f"  contributes {insert_record.contributed_segments} segment(s) / "
+            f"{insert_record.contributed_length_mm:g} mm downstream; hides "
+            f"{insert_record.hidden_segments} / {insert_record.hidden_length_mm:g} mm",
+            f"  verify with: {payload['verify_hint']}",
+        ]
+        _print_written(
+            "block", path, before, "\n".join(lines), len(handles), layer_counts
+        )
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# subcommand: layers
+# ---------------------------------------------------------------------------
+
+#: ``--set NAME.KEY=VALUE`` keys, mapped to the LayerSpec attribute they set and
+#: how the string is converted. An unknown key is a usage error, never a
+#: silently ignored typo -- a mistyped ``--set WAL1.colour=7`` that changes
+#: nothing is exactly the silent-success shape this CLI exists to prevent.
+_LAYER_SET_KEYS: dict[str, tuple[str, str]] = {
+    "color": ("color", "color"),
+    "linetype": ("linetype", "linetype"),
+    "lineweight": ("lineweight", "int"),
+    "plot": ("plot", "bool"),
+    "on": ("on", "bool"),
+    "locked": ("locked", "bool"),
+    "frozen": ("frozen", "bool"),
+    "description": ("description", "text"),
+}
+
+#: Keys advertised by ``layers --help``. ``layer.py`` rejects ``description``
+#: outright (LayerSpec.__post_init__: "description is unsupported"), so the
+#: CLI must not promise it -- but the routing entry above is kept so
+#: ``--set NAME.description=...`` still fails through the single, explicit
+#: layer.py rejection (exit 2) instead of being silently reinterpreted as an
+#: unknown key. Advertising it while refusing it was the reported defect.
+_HELP_SET_KEYS: tuple[str, ...] = tuple(
+    sorted(key for key in _LAYER_SET_KEYS if key != "description")
+)
+
+
+def _build_layer_specs(args: argparse.Namespace) -> list[Any]:
+    names: list[str] = list(args.layer or [])
+    values: dict[str, dict[str, Any]] = {name: {} for name in names}
+    for item in args.set or []:
+        if "=" not in item:
+            raise CliError(f"--set needs NAME.KEY=VALUE, got {item!r}")
+        target, _, raw = item.partition("=")
+        name, _, key = target.partition(".")
+        if key not in _LAYER_SET_KEYS:
+            raise CliError(
+                f"--set key {key!r} is not one of "
+                f"{sorted(_LAYER_SET_KEYS)}"
+            )
+        if not name:
+            raise CliError(f"--set needs a layer name before the '.', got {item!r}")
+        attribute, kind = _LAYER_SET_KEYS[key]
+        if kind == "int":
+            try:
+                parsed: Any = int(raw)
+            except ValueError as exc:
+                raise CliError(f"--set {name}.{key}={raw!r} is not an integer") from exc
+        elif kind == "bool":
+            lowered = raw.strip().lower()
+            if lowered not in ("true", "false", "on", "off", "1", "0", "yes", "no"):
+                raise CliError(
+                    f"--set {name}.{key}={raw!r} is not a boolean "
+                    "(true/false, on/off, yes/no, 1/0)"
+                )
+            parsed = lowered in ("true", "on", "1", "yes")
+        elif kind == "color":
+            parsed = raw if not raw.lstrip("-").isdigit() else int(raw)
+        else:
+            parsed = raw
+        if name not in values:
+            values[name] = {}
+        values[name][attribute] = parsed
+    ordered = list(dict.fromkeys([*names, *values]))
+    if not ordered:
+        raise CliError(
+            "layers needs at least one --layer NAME or --set NAME.KEY=VALUE"
+        )
+    try:
+        return [make_layer(name, **values.get(name, {})) for name in ordered]
+    except LayerValidationError as exc:
+        raise CliError(f"layer rejected: {exc}") from exc
+
+
+def _assert_layers_written(target: Path, names: Sequence[str]) -> None:
+    """Prove the LAYER table in ``target`` really holds every requested name.
+
+    Raises :class:`VerificationFailed` (a ``TransactionError``), so the
+    enclosing transaction rolls the write back and ``main`` reports exit 3.
+    """
+    ezdxf = _require_ezdxf()
+    try:
+        written = ezdxf.readfile(target)
+    except (OSError, ezdxf.DXFError) as exc:  # pragma: no cover - unreadable output
+        raise VerificationFailed(f"{target}: cannot be read back: {exc}") from exc
+    present = {str(entry.dxf.name).upper() for entry in written.layers}
+    missing = [name for name in names if name.upper() not in present]
+    if missing:
+        raise VerificationFailed(
+            f"{target}: {len(missing)} of {len(names)} requested layers are absent "
+            f"from the LAYER table after read-back: {missing}"
+        )
+
+
+def cmd_layers(args: argparse.Namespace) -> int:
+    specs = _build_layer_specs(args)
+    doc = _new_document()
+    order = write_layers(
+        doc,
+        specs,
+        allow_overwrite=args.allow_overwrite,
+        protect_layer0=not args.no_protect_layer0,
+    )
+    path = _resolve_output_path(args.out)
+    before = _refuse_if_present(path, args.force, "layers")
+
+    def save(target: Path) -> tuple[str, ...]:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        doc.saveas(target)
+        # A layers recording creates table entries, not modelspace entities, so
+        # there is no handle for the transaction verifier to check -- and
+        # required_layers cannot help, because that check asks which layers
+        # CARRY ENTITIES. So the assertion is made here, inside the
+        # transaction: read the file back and prove every requested layer is
+        # in its table. Failing here rolls the write back and exits 3, rather
+        # than committing a file that does not contain what was asked for.
+        _assert_layers_written(target, [spec.name for spec in specs])
+        return ()
+
+    names = [spec.name for spec in specs]
+    _write_output(path, before=before, save=save, required_layers=())
+    payload = {
+        "command": "layers",
+        "ok": True,
+        **_output_note(args, path, before),
+        "dxf_version": DXF_WRITE_VERSION,
+        "layers": names,
+        "entity_count": 0,
+        "layer_counts": {name: 0 for name in names},
+        "handles": [],
+        "layer_table": {
+            "requested": list(order.requested),
+            "appended": list(order.appended),
+            "order": list(order.order),
+            "records": [
+                {
+                    "name": item.name,
+                    "created": item.created,
+                    "semantic": str(item.semantic),
+                    "applied": dict(item.applied),
+                    "preserved": dict(item.preserved),
+                    "unclassified": item.unclassified,
+                }
+                for item in order.records
+            ],
+        },
+        "verify_hint": _verify_hint(
+            path, "--only", "layers", *(["--expect-layers", *names] if names else [])
+        ),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        lines = [
+            f"layer table order: {', '.join(order.order)}",
+            f"  created now: {', '.join(order.appended) or '(none)'}",
+        ]
+        for item in order.records:
+            detail = f"applied {dict(item.applied)}" if item.applied else "no change requested"
+            if item.unclassified:
+                detail += " [UNRESOLVED: this name classifies as UNKNOWN]"
+            lines.append(f"  {item.name}: {'created' if item.created else 'reused'}, {detail}")
+        lines.append(f"  verify with: {payload['verify_hint']}")
+        _print_written("layers", path, before, "\n".join(lines), 0, {name: 0 for name in names})
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # subcommand: verify
 # ---------------------------------------------------------------------------
 
 
 def _read_modelspace(path: Path) -> tuple[Any, list[dict[str, Any]]]:
+    """Open ``path`` and flatten the modelspace into plain dicts.
+
+    Read-only: the document is opened and never saved. The per-entity decode
+    is deliberately defensive -- a malformed entity yields ``None`` for the
+    field that could not be read rather than aborting the whole report, and
+    the CHECKS then decide whether an unreadable value is a defect. Silently
+    dropping an entity from the list instead would let an entity count match
+    by accident, which is the failure mode this project keeps re-learning.
+    """
     ezdxf = _require_ezdxf()
     try:
         doc = ezdxf.readfile(path)
@@ -1442,8 +2495,64 @@ def _read_modelspace(path: Path) -> tuple[Any, list[dict[str, Any]]]:
             item["radius"] = float(entity.dxf.radius)
             item["start_angle"] = float(entity.dxf.start_angle)
             item["end_angle"] = float(entity.dxf.end_angle)
+        elif item["type"] == "LWPOLYLINE":
+            # A hatch recording is a closed LWPOLYLINE carrying the pattern
+            # contract as XDATA. read_hatch_metadata is the HATCH MODULE'S OWN
+            # reader, so this is a real roundtrip through the module that wrote
+            # the entity, not a re-implementation of it here.
+            try:
+                vertices = [_xy(vertex) for vertex in entity.get_points()]
+            except (AttributeError, TypeError, ValueError):  # pragma: no cover
+                vertices = []
+            item["vertices"] = vertices
+            item["closed"] = bool(getattr(entity, "closed", False))
+            item["hatch"] = _safe_hatch_metadata(entity)
+        elif item["type"] == "TEXT":
+            item["insert"] = _xy(entity.dxf.insert)
+            item["text"] = str(entity.dxf.text)
+            item["height"] = float(entity.dxf.height)
+            item["rotation_deg"] = float(getattr(entity.dxf, "rotation", 0.0))
+        elif item["type"] == "MTEXT":
+            item["insert"] = _xy(entity.dxf.insert)
+            item["text"] = str(entity.plain_text())
+            item["height"] = float(entity.dxf.char_height)
+            item["rotation_deg"] = float(getattr(entity.dxf, "rotation", 0.0))
+        elif item["type"] == "DIMENSION":
+            item["block_name"] = str(entity.dxf.geometry)
+            item["text"] = str(getattr(entity.dxf, "text", ""))
+            item["measurement"] = _safe_dim_measurement(doc, entity)
+            # The rendered string lives in the anonymous block, NOT in
+            # dxf.text: dxf.text is the "<>" placeholder when the text was
+            # delegated to the renderer. Reading the wrong one is how a
+            # dimension passes a check that never looked at the drawing.
+            item["rendered_text"] = dim_rendered_text(doc, entity)
+        elif item["type"] == "INSERT":
+            item["name"] = str(entity.dxf.name)
+            item["insert"] = _xy(entity.dxf.insert)
         entities.append(item)
     return doc, entities
+
+
+def _safe_hatch_metadata(entity: Any) -> dict[str, Any] | None:
+    """The hatch module's own reader, or None if this polyline is not a hatch."""
+    try:
+        return read_hatch_metadata(entity)
+    except Exception:  # noqa: BLE001 - a foreign polyline is not an error
+        return None
+
+
+def _safe_dim_measurement(doc: Any, entity: Any) -> float | None:
+    """What the DIMENSION measures right now, or None if it cannot be read.
+
+    None is carried into the report and turned into a FAIL by
+    ``dim_measurement_is_readable``: an unmeasurable dimension in a drawing
+    somebody asked to be verified is a defect, not a shrug.
+    """
+    try:
+        value = entity.get_measurement()
+    except Exception:  # noqa: BLE001 - a broken DIMSTYLE is reported, not raised
+        return None
+    return None if value is None else float(value)
 
 
 def _unit_direction(start: tuple[float, float], end: tuple[float, float]) -> tuple[float, float]:
@@ -1470,6 +2579,32 @@ def _point_segment_distance(
     parameter = max(0.0, min(1.0, parameter))
     projection = Point2D(start.x + parameter * dx, start.y + parameter * dy)
     return math.dist((point.x, point.y), (projection.x, projection.y))
+
+
+def _as_float_sequence(
+    value: float | Sequence[float] | None,
+) -> list[float]:
+    """Normalise a repeatable expectation argument into a list of floats.
+
+    ``--expect-dim-measurement`` is an ``action="append"`` flag, so argparse
+    hands ``verify_drawing`` a list, but the function is also called directly
+    with a single float. Both are accepted; ``None`` means "not requested".
+    """
+    if value is None:
+        return []
+    if isinstance(value, (int, float)):
+        return [float(value)]
+    return [float(item) for item in value]
+
+
+def expectation_check_name(name: str, index: int) -> str:
+    """Name for the ``index``-th instance of a repeatable expectation check.
+
+    The first occurrence keeps the bare name so existing consumers of
+    ``failed``/``passed`` are unaffected; later repeats are suffixed so a
+    report naming several expectations still names them one by one.
+    """
+    return name if index == 0 else f"{name}_{index + 1}"
 
 
 def _check(name: str, passed: bool, detail: str, **extra: Any) -> dict[str, Any]:
@@ -2383,6 +3518,515 @@ def _analyse_door(
     return checks, measured
 
 
+#: Every value ``--only`` accepts: one scope per recording module, plus
+#: ``both`` (the historical wall+door default) and ``all``.
+VERIFY_SCOPES: tuple[str, ...] = (
+    "both",
+    "wall",
+    "door",
+    "window",
+    "opening",
+    "hatch",
+    "dim",
+    "text",
+    "block",
+    "layers",
+    "all",
+)
+
+#: LAYER table entries ezdxf creates in a fresh R2018 document. They are not
+#: "layers the recorder made", so ``--only layers`` does not count them as
+#: content and ``--expect-layers`` never demands them.
+DEFAULT_LAYER_NAMES: tuple[str, ...] = ("0", "Defpoints")
+
+#: Block table entries that are CAD machinery rather than recorded content.
+DEFAULT_BLOCK_NAMES: frozenset[str] = frozenset(
+    {"_CLOSEDFILLED", "_CLOSEDFILLED_HATCH", "_CLOSEDFILLED_CUSTOM"}
+)
+
+
+def _arc_length(radius: float, start_angle: float, end_angle: float) -> float:
+    """Length of the CCW arc from ``start_angle`` to ``end_angle``, in degrees."""
+    sweep = (end_angle - start_angle) % 360.0
+    if sweep == 0.0:
+        sweep = 360.0
+    return abs(radius) * math.radians(sweep)
+
+
+#: Returned by ``_block_geometry`` when an INSERT names a block that is not in
+#: the BLOCK table. ``doc.blocks.get()`` answers a missing name with ``None``
+#: rather than raising, so "absent" is a value the caller must handle, not an
+#: exception path.
+MISSING_BLOCK: tuple[int, float] | None = None
+
+
+def _block_geometry(doc: Any, block_name: str) -> tuple[int, float] | None:
+    """How much geometry a block definition holds, as (entities, length_mm).
+
+    Measurement only -- this is what an INSERT keeps from a downstream
+    segment extractor, so it is what the visibility check reports. It is a
+    count and a length on purpose: the point is to name the cost of the
+    INSERT, not to re-derive the geometry.
+
+    Returns ``None`` when the block definition is absent. A drawing can hold an
+    INSERT naming a block that was deleted, never written, or added by another
+    tool; ``doc.blocks.get`` answers that with ``None`` and does not raise, so
+    the absence has to be reported as a value. Iterating the ``None`` instead
+    would abort the whole report -- losing every other check with it.
+    """
+    try:
+        block = doc.blocks.get(block_name)
+    except Exception:  # noqa: BLE001 - a malformed table is reported, not raised
+        return MISSING_BLOCK
+    if block is None:
+        return MISSING_BLOCK
+    count = 0
+    length = 0.0
+    for entity in block:
+        kind = entity.dxftype()
+        if kind == "LINE":
+            count += 1
+            length += _length(_xy(entity.dxf.start), _xy(entity.dxf.end))
+        elif kind == "ARC":
+            count += 1
+            length += _arc_length(
+                float(entity.dxf.radius),
+                float(entity.dxf.start_angle),
+                float(entity.dxf.end_angle),
+            )
+    return (count, length)
+
+
+def _analyse_hatch(
+    hatch_entities: list[dict[str, Any]], tol: float, require_hatch: bool
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """A hatch is a closed boundary polyline plus a pattern contract.
+
+    The contract is the module's own (XDATA read back by
+    ``hatch.read_hatch_metadata``), so these checks ask the hatch module's own
+    question of the file rather than re-deriving it.
+    """
+    checks: list[dict[str, Any]] = []
+    measured: dict[str, Any] = {"count": len(hatch_entities)}
+    if not hatch_entities:
+        if require_hatch:
+            checks.append(
+                _check(
+                    "hatch_present",
+                    False,
+                    "--only hatch was requested but no LWPOLYLINE carrying the "
+                    "hatch pattern contract is in this drawing",
+                    measured=0,
+                )
+            )
+        else:
+            measured["not_required_but_checked"] = True
+        return checks, measured
+
+    areas = []
+    perimeters = []
+    patterns = []
+    for item in hatch_entities:
+        meta = item.get("hatch") or {}
+        areas.append(float(meta.get("area_mm2", 0.0)))
+        perimeters.append(float(meta.get("perimeter_mm", 0.0)))
+        pattern = meta.get("pattern") or {}
+        patterns.append(str(pattern.get("name", "")))
+
+    checks.append(
+        _check(
+            "hatch_boundary_is_closed",
+            all(item.get("closed") for item in hatch_entities),
+            "every hatch boundary polyline is closed"
+            if all(item.get("closed") for item in hatch_entities)
+            else "a hatch boundary polyline is not closed, so it encloses nothing",
+            closed=[bool(item.get("closed")) for item in hatch_entities],
+        )
+    )
+    vertices = [len(item.get("vertices") or ()) for item in hatch_entities]
+    checks.append(
+        _check(
+            "hatch_vertex_count_at_least_three",
+            all(count >= 3 for count in vertices),
+            f"hatch boundary vertex counts: {vertices}"
+            + ("" if all(count >= 3 for count in vertices) else " (a ring needs 3)"),
+            vertex_counts=vertices,
+        )
+    )
+    finite_areas = [area for area in areas if math.isfinite(area)]
+    checks.append(
+        _check(
+            "hatch_area_positive",
+            len(finite_areas) == len(areas) and all(area > tol for area in finite_areas),
+            f"hatch areas in mm2: {areas}"
+            + (
+                ""
+                if len(finite_areas) == len(areas) and all(area > tol for area in finite_areas)
+                else " (a degenerate or non-finite boundary encloses nothing)"
+            ),
+            areas_mm2=areas,
+        )
+    )
+    checks.append(
+        _check(
+            "hatch_pattern_name_present",
+            all(name.strip() for name in patterns),
+            f"hatch pattern names: {patterns}"
+            + ("" if all(name.strip() for name in patterns) else " (an unnamed pattern is not a contract)"),
+            pattern_names=patterns,
+        )
+    )
+    measured["area_mm2"] = sum(areas)
+    measured["perimeter_mm"] = sum(perimeters)
+    measured["areas_mm2"] = areas
+    measured["pattern_names"] = patterns
+    measured["handles"] = [item["handle"] for item in hatch_entities]
+    return checks, measured
+
+
+def _numeric_dimension_text(value: str) -> tuple[float, float] | None:
+    """(value, quantum) if ``value`` is a plain number, else None.
+
+    The quantum comes from the string's own decimals, so the comparison
+    tolerance is derived from what the drawing says rather than guessed.
+    """
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    if not math.isfinite(number):
+        return None
+    decimals = len(text.split(".")[1]) if "." in text else 0
+    return (number, 0.5 * (10.0 ** -decimals))
+
+
+def _analyse_dim(
+    dim_entities: list[dict[str, Any]], tol: float, require_dim: bool
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """A dimension must be measurable and its own text must not lie.
+
+    ``rendered_text`` is read out of the anonymous block, which is what a
+    human sees; ``dxf.text`` is the ``"<>`` placeholder whenever the renderer
+    owns the string, so comparing that would compare a placeholder.
+    """
+    checks: list[dict[str, Any]] = []
+    measured: dict[str, Any] = {"count": len(dim_entities)}
+    if not dim_entities:
+        if require_dim:
+            checks.append(
+                _check(
+                    "dim_present",
+                    False,
+                    "--only dim was requested but this drawing contains no DIMENSION",
+                    measured=0,
+                )
+            )
+        else:
+            measured["not_required_but_checked"] = True
+        return checks, measured
+
+    values = [item.get("measurement") for item in dim_entities]
+    readable = [value for value in values if value is not None]
+    checks.append(
+        _check(
+            "dim_measurement_is_readable",
+            len(readable) == len(values),
+            f"measured {len(readable)} of {len(values)} dimensions"
+            + ("" if len(readable) == len(values) else " (an unreadable one cannot be verified)"),
+            measured=readable,
+        )
+    )
+    positive = [value for value in readable if value > 0.0]
+    checks.append(
+        _check(
+            "dim_measurement_positive",
+            len(positive) == len(readable) and bool(readable),
+            f"measurements: {readable}"
+            + (
+                ""
+                if len(positive) == len(readable) and readable
+                else " (a zero-length dimension has no direction and cannot be read)"
+            ),
+            measured=readable,
+        )
+    )
+
+    mismatches: list[str] = []
+    injected: list[str] = []
+    for item in dim_entities:
+        rendered = str(item.get("rendered_text") or "")
+        parsed = _numeric_dimension_text(rendered)
+        actual = item.get("measurement")
+        if parsed is None:
+            # dim.py records caller-supplied strings verbatim (TextMode
+            # INJECTED) and the "<>" placeholder is renderer-owned. Neither is
+            # a number to check against, so it is reported, not failed.
+            injected.append(rendered or str(item.get("text") or ""))
+            continue
+        if actual is None:
+            continue
+        value, quantum = parsed
+        if abs(value - actual) > max(tol, quantum):
+            mismatches.append(f"{item['handle']}: reads {rendered!r}, measures {actual:g}")
+    checks.append(
+        _check(
+            "dim_text_matches_measurement",
+            not mismatches,
+            "every dimension's rendered text agrees with its measurement"
+            if not mismatches
+            else f"dimension text disagrees with the geometry: {'; '.join(mismatches)}",
+            mismatches=mismatches,
+        )
+    )
+    measured["measurements"] = readable
+    measured["rendered_texts"] = [str(item.get("rendered_text") or "") for item in dim_entities]
+    measured["injected_texts"] = injected
+    measured["handles"] = [item["handle"] for item in dim_entities]
+    return checks, measured
+
+
+def _analyse_text(
+    text_entities: list[dict[str, Any]], tol: float, require_text: bool
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """A recorded annotation must carry content and a usable height."""
+    checks: list[dict[str, Any]] = []
+    measured: dict[str, Any] = {"count": len(text_entities)}
+    if not text_entities:
+        if require_text:
+            checks.append(
+                _check(
+                    "text_present",
+                    False,
+                    "--only text was requested but this drawing contains no TEXT or MTEXT",
+                    measured=0,
+                )
+            )
+        else:
+            measured["not_required_but_checked"] = True
+        return checks, measured
+
+    contents = [str(item.get("text") or "") for item in text_entities]
+    checks.append(
+        _check(
+            "text_content_non_empty",
+            all(content.strip() for content in contents),
+            f"annotation content: {contents}"
+            + ("" if all(content.strip() for content in contents) else " (empty text is not an annotation)"),
+            contents=contents,
+        )
+    )
+    heights = []
+    for item in text_entities:
+        try:
+            heights.append(float(item.get("height", 0.0)))
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            heights.append(float("nan"))
+    usable = [height for height in heights if math.isfinite(height) and height > tol]
+    checks.append(
+        _check(
+            "text_height_is_positive_finite",
+            len(usable) == len(heights) and bool(heights),
+            f"text heights: {heights}"
+            + (
+                ""
+                if len(usable) == len(heights) and heights
+                else " (a non-finite or zero height cannot be rendered)"
+            ),
+            heights=heights,
+        )
+    )
+    measured["contents"] = contents
+    measured["heights"] = heights
+    measured["kinds"] = [item["type"] for item in text_entities]
+    measured["handles"] = [item["handle"] for item in text_entities]
+    return checks, measured
+
+
+def _analyse_block(
+    doc: Any,
+    entities: list[dict[str, Any]],
+    require_block: bool,
+    allow_hidden_insert: bool,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Block definitions, and the price of an INSERT.
+
+    The visibility check replaces the old ``INSERT`` ban. An INSERT is
+    legitimate output (``block --mode insert``); what is not legitimate is an
+    INSERT nobody acknowledged, because it contributes nothing to any
+    downstream measurement while still looking like content. So the check
+    reports the hidden entity count and length and FAILS unless the caller
+    says the concealment was intended.
+    """
+    checks: list[dict[str, Any]] = []
+    block_names = [
+        entry.name
+        for entry in doc.blocks
+        if not entry.name.startswith("*") and entry.name not in DEFAULT_BLOCK_NAMES
+    ]
+    inserts = [item for item in entities if item["type"] == "INSERT"]
+    measured: dict[str, Any] = {
+        "block_names": block_names,
+        "insert_count": len(inserts),
+    }
+    if block_names or require_block:
+        # Only emitted when it can say something: a scope that did not ask for
+        # a block and found none reports its absence in `measured` rather than
+        # inventing a FAIL for a drawing that was never asked to hold a block.
+        checks.append(
+            _check(
+                "block_definition_present",
+                bool(block_names),
+                f"block definitions: {block_names}"
+                + (
+                    ""
+                    if block_names
+                    else " (--only block was requested but this drawing has no block)"
+                ),
+                block_names=block_names,
+            )
+        )
+    else:
+        measured["block_definition_not_required"] = True
+
+    hidden: dict[str, dict[str, Any]] = {}
+    # INSERTs whose block definition is not in the BLOCK table. Their cost
+    # cannot be measured at all, which is a different failure from "measured
+    # and found to be zero", so they are tracked by name and reported.
+    dangling: list[str] = []
+    total_hidden = 0
+    total_length = 0.0
+    for item in inserts:
+        block_name = str(item.get("name", ""))
+        geometry = _block_geometry(doc, block_name)
+        if geometry is MISSING_BLOCK or geometry is None:
+            if block_name not in dangling:
+                dangling.append(block_name)
+            hidden[block_name] = {
+                "entities": None,
+                "length_mm": None,
+                "handle": item["handle"],
+                "block_definition": "missing",
+            }
+            continue
+        count, length = geometry
+        hidden[block_name] = {
+            "entities": count,
+            "length_mm": length,
+            "handle": item["handle"],
+            "block_definition": "present",
+        }
+        total_hidden += count
+        total_length += length
+    measured["dangling_insert_block_names"] = dangling
+    measured["hidden"] = hidden
+    measured["hidden_entities"] = total_hidden
+    measured["hidden_length_mm"] = total_length
+
+    if not inserts:
+        checks.append(
+            _check(
+                "insert_downstream_visibility",
+                True,
+                "no INSERT in the drawing: nothing is hidden from downstream "
+                "measurement",
+                hidden_entities=0,
+                hidden_length_mm=0.0,
+                dangling_block_names=[],
+            )
+        )
+    else:
+        # A dangling INSERT is not concealment the caller can acknowledge: the
+        # cost is unmeasurable, not zero, so it fails whatever
+        # --allow-hidden-insert says, and the missing block names are named
+        # here instead of raising out of the whole report.
+        measured_insert_detail = (
+            f"INSERT hides {total_hidden} entities / {total_length:g} mm from "
+            f"downstream measurement and contributes 0: {hidden}"
+            + (
+                f". INSERT also names block definition(s) that are not in the "
+                f"BLOCK table: {dangling}; the geometry behind them cannot be "
+                f"measured at all, so part of this cost is unknown"
+                if dangling
+                else ""
+            )
+        )
+        if dangling and allow_hidden_insert:
+            tail = (
+                "; acknowledged with --allow-hidden-insert, but a dangling "
+                "INSERT is not concealed geometry and stays unmeasurable"
+            )
+        elif dangling:
+            tail = (
+                f". Additionally {dangling} name block definition(s) that are "
+                "not in the BLOCK table, which no acknowledgement can resolve. "
+                f"{INSERT_VISIBILITY_NOTE}"
+            )
+        elif allow_hidden_insert:
+            tail = "; acknowledged with --allow-hidden-insert"
+        else:
+            tail = f". {INSERT_VISIBILITY_NOTE}"
+        checks.append(
+            _check(
+                "insert_downstream_visibility",
+                allow_hidden_insert and not dangling,
+                measured_insert_detail + tail,
+                hidden_entities=total_hidden,
+                hidden_length_mm=total_length,
+                acknowledged=allow_hidden_insert,
+                dangling_block_names=dangling,
+                hidden=hidden,
+            )
+        )
+    return checks, measured
+
+
+def _analyse_layers(
+    doc: Any, require_layers: bool, expect_layer_names: Sequence[str] | None
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The LAYER table, measured independently of what is drawn on it.
+
+    A drawing can verify with zero modelspace entities and still be wrong
+    about its layers -- that is the whole point of a ``layers`` recording --
+    so this reads the table itself rather than inferring it from entities.
+    """
+    checks: list[dict[str, Any]] = []
+    table = [(str(entry.dxf.name), int(entry.dxf.color)) for entry in doc.layers]
+    non_default = [name for name, _color in table if name not in DEFAULT_LAYER_NAMES]
+    measured: dict[str, Any] = {
+        "layer_table": [name for name, _color in table],
+        "non_default_layers": non_default,
+        "colors": {name: color for name, color in table},
+    }
+    checks.append(
+        _check(
+            "layers_table_has_content",
+            bool(non_default) or not require_layers,
+            f"non-default layers: {non_default}"
+            + ("" if non_default else " (--only layers was requested but the table has none)"),
+            non_default_layers=non_default,
+        )
+    )
+    if expect_layer_names is not None:
+        wanted = [str(name) for name in expect_layer_names]
+        present = {name.upper() for name, _color in table}
+        missing = [name for name in wanted if name.upper() not in present]
+        checks.append(
+            _check(
+                "layer_names_match_expectation",
+                not missing,
+                f"expected layers {wanted}, table holds {non_default}"
+                + (f"; missing: {missing}" if missing else ""),
+                expected=wanted,
+                measured=[name for name, _color in table],
+                missing=missing,
+            )
+        )
+    return checks, measured
+
+
 def verify_drawing(
     path: Path,
     *,
@@ -2393,11 +4037,25 @@ def verify_drawing(
     expect_door_center: Sequence[float] | None = None,
     expect_window_width: float | None = None,
     expect_opening_width: float | None = None,
+    expect_hatch_area: float | None = None,
+    expect_hatch_pattern: str | None = None,
+    expect_dim_measurement: float | Sequence[float] | None = None,
+    expect_text_content: str | None = None,
+    expect_block_name: str | None = None,
+    expect_layer_names: Sequence[str] | None = None,
     require: str = "both",
+    unresolved_layers: Sequence[str] = (),
+    allow_hidden_insert: bool = False,
 ) -> dict[str, Any]:
     """Read ``path`` back and return a verification report.
 
     Pure read-only inspection: the drawing is opened, never saved.
+
+    Nine ``--only`` scopes, one per recording module, plus per-module
+    ``expect_*`` arguments. The five that used to have no verification path at
+    all (hatch, dim, text, block, layer) each got a scope AND expectations,
+    because a scope alone can only say "something is here", not "the thing I
+    asked for is here".
     """
     _doc, entities = _read_modelspace(path)
 
@@ -2408,18 +4066,24 @@ def verify_drawing(
         type_counts[item["type"]] = type_counts.get(item["type"], 0) + 1
 
     checks: list[dict[str, Any]] = []
-    if require not in ("both", "wall", "door", "window", "opening", "all"):
+    if require not in VERIFY_SCOPES:
         raise CliError(
-            "--only must be 'both', 'wall', 'door', 'window', 'opening' or 'all'"
+            "--only must be one of " + ", ".join(sorted(VERIFY_SCOPES))
         )
     # 'both' keeps its measured meaning (wall + door) so an existing
     # wall/door drawing verifies exactly as before. 'all' is the strict
-    # fail-closed superset. Either way, a window or opening that is PRESENT is
-    # always checked: 'both' does not become a way to skip them.
+    # fail-closed superset. Either way, a window, opening, hatch, dimension,
+    # text or block that is PRESENT is always checked: 'both' does not become
+    # a way to skip them.
     require_wall = require in ("both", "wall", "all")
     require_door = require in ("both", "door", "all")
     require_window = require in ("window", "all")
     require_opening = require in ("opening", "all")
+    require_hatch = require in ("hatch", "all")
+    require_dim = require in ("dim", "all")
+    require_text = require in ("text", "all")
+    require_block = require in ("block", "all")
+    require_layers = require in ("layers", "all")
     total = len(entities)
     checks.append(
         _check(
@@ -2447,25 +4111,35 @@ def verify_drawing(
     }
     checks.append(
         _check(
-            "no_insert_or_hatch",
+            "no_hatch_entity",
             not forbidden,
             f"forbidden entity types present: {forbidden}"
             if forbidden
-            else "no INSERT and no HATCH",
+            else "no HATCH entity (the hatch recorder writes a boundary polyline "
+            "plus a pattern contract, never a HATCH)",
             found=forbidden,
         )
     )
 
     semantics = {name: str(classify_layer(name)) for name in sorted(layer_counts)}
-    # The opening recorder's TEMP- layers resolve to UNKNOWN by design
-    # (LAYER_MAPPING_RESOLVED is False), so they are excluded here and
-    # reported by _analyse_opening as a WARN instead. Excluding only these
-    # exact names keeps a genuinely unknown layer (ZZZ_MYSTERY) a FAIL.
-    unresolved_present = [name for name in semantics if name in OPENING_UNRESOLVED_LAYERS]
+    # A layer that classifies as UNKNOWN is normally a FAIL -- but two
+    # recorders REFUSE to invent a layer name (hatch.HATCH_LAYER_STATUS and
+    # text.TEXT_LAYER_STATUS are both "UNRESOLVED") and push the decision to
+    # the caller, and block declares the same. So the drawing may legitimately
+    # contain an unclassified layer, exactly as the opening recorder's TEMP-
+    # layers are legitimate. Those are declared per-drawing with
+    # --unresolved-layer, are listed in the check's own detail, and any
+    # UNDECLARED unknown layer is still a FAIL.
+    declared = {str(name).upper() for name in unresolved_layers}
+    unresolved_present = [
+        name
+        for name in semantics
+        if name.upper() in declared or name in OPENING_UNRESOLVED_LAYERS
+    ]
     unknown = [
         name
         for name, semantic in semantics.items()
-        if semantic == LayerSemantic.UNKNOWN and name not in OPENING_UNRESOLVED_LAYERS
+        if semantic == LayerSemantic.UNKNOWN and name not in unresolved_present
     ]
     checks.append(
         _check(
@@ -2512,6 +4186,18 @@ def verify_drawing(
             window_entities.append(item)
         elif item["layer"] in OPENING_UNRESOLVED_LAYERS:
             opening_entities.append(item)
+
+    # The five recorders that used to have no verification path. They are
+    # collected by ENTITY TYPE, not by layer, because two of them refuse to
+    # name a layer at all (see UNRESOLVED_LAYER_NOTE) and one of them
+    # (dim) records on DIM, which no other recorder uses.
+    hatch_entities = [
+        item
+        for item in entities
+        if item["type"] == "LWPOLYLINE" and item.get("hatch")
+    ]
+    dim_entities = [item for item in entities if item["type"] == "DIMENSION"]
+    text_entities = [item for item in entities if item["type"] in ("TEXT", "MTEXT")]
 
     wall_checks, wall_measured = _analyse_wall(
         wall_lines, centerlines, tol, require_wall=require_wall
@@ -2670,6 +4356,114 @@ def verify_drawing(
                 )
             )
 
+    # ---- the five recorders that had no verification path before this ------
+    hatch_checks, hatch_measured = _analyse_hatch(hatch_entities, tol, require_hatch)
+    checks.extend(hatch_checks)
+    if expect_hatch_area is not None:
+        measured_area = hatch_measured.get("area_mm2") if hatch_entities else None
+        checks.append(
+            _check(
+                "hatch_area_matches_expectation",
+                measured_area is not None and abs(measured_area - expect_hatch_area) <= tol,
+                f"--expect-hatch-area {expect_hatch_area:g} was requested but "
+                "no hatch boundary could be measured in this drawing"
+                if measured_area is None
+                else (
+                    f"expected area {expect_hatch_area:g} mm2, measured "
+                    f"{measured_area:g} mm2"
+                ),
+                expected=expect_hatch_area,
+                measured=measured_area,
+            )
+        )
+    if expect_hatch_pattern is not None:
+        names = hatch_measured.get("pattern_names") or []
+        checks.append(
+            _check(
+                "hatch_pattern_matches_expectation",
+                expect_hatch_pattern in names,
+                f"expected pattern {expect_hatch_pattern!r}, found {names}"
+                + (
+                    ""
+                    if names
+                    else " (no hatch pattern contract is present in this drawing)"
+                ),
+                expected=expect_hatch_pattern,
+                measured=names,
+            )
+        )
+
+    dim_checks, dim_measured = _analyse_dim(dim_entities, tol, require_dim)
+    checks.extend(dim_checks)
+    for index, expected in enumerate(_as_float_sequence(expect_dim_measurement)):
+        values = [float(value) for value in (dim_measured.get("measurements") or [])]
+        matched = next(
+            (value for value in values if abs(value - expected) <= tol), None
+        )
+        checks.append(
+            _check(
+                expectation_check_name("dim_measurement_matches_expectation", index),
+                matched is not None,
+                f"--expect-dim-measurement {expected:g} was "
+                "requested but no dimension measurement could be read from this "
+                "drawing"
+                if not values
+                else (
+                    f"expected measurement {expected:g} mm is present in this "
+                    f"drawing as {matched:g} mm; measured {values}"
+                )
+                if matched is not None
+                else (
+                    f"expected measurement {expected:g} mm, no measured "
+                    f"dimension matches it; measured {values}"
+                ),
+                expected=expected,
+                measured=values,
+                matched=matched,
+            )
+        )
+
+    text_checks, text_measured = _analyse_text(text_entities, tol, require_text)
+    checks.extend(text_checks)
+    if expect_text_content is not None:
+        contents = text_measured.get("contents") or []
+        checks.append(
+            _check(
+                "text_content_matches_expectation",
+                expect_text_content in contents,
+                f"expected content {expect_text_content!r}, found {contents}"
+                + (
+                    ""
+                    if contents
+                    else " (no TEXT or MTEXT is present in this drawing)"
+                ),
+                expected=expect_text_content,
+                measured=contents,
+            )
+        )
+
+    block_checks, block_measured = _analyse_block(
+        _doc, entities, require_block, allow_hidden_insert
+    )
+    checks.extend(block_checks)
+    if expect_block_name is not None:
+        names = block_measured.get("block_names") or []
+        checks.append(
+            _check(
+                "block_name_matches_expectation",
+                expect_block_name in names,
+                f"expected block {expect_block_name!r}, found {names}"
+                + ("" if names else " (this drawing defines no block)"),
+                expected=expect_block_name,
+                measured=names,
+            )
+        )
+
+    layer_checks, layers_measured = _analyse_layers(
+        _doc, require_layers, expect_layer_names
+    )
+    checks.extend(layer_checks)
+
     failed = [check["name"] for check in checks if check["status"] == "FAIL"]
     warned = [check["name"] for check in checks if check["status"] == "WARN"]
     return {
@@ -2682,10 +4476,19 @@ def verify_drawing(
         "layer_counts": layer_counts,
         "type_counts": type_counts,
         "layer_semantics": semantics,
+        "forbidden_entity_types": list(FORBIDDEN_DXF_TYPES),
         "wall": wall_measured,
         "door": door_measured,
         "window": window_measured,
         "opening": opening_measured,
+        "hatch": hatch_measured,
+        "dim": dim_measured,
+        "text": text_measured,
+        "block": block_measured,
+        "layers": layers_measured,
+        "unresolved_layers_declared": list(unresolved_layers),
+        "unresolved_layer_note": UNRESOLVED_LAYER_NOTE if unresolved_layers else None,
+        "insert_visibility_note": INSERT_VISIBILITY_NOTE if block_measured.get("insert_count") else None,
         "opening_layer_mapping_resolved": OPENING_LAYER_MAPPING_RESOLVED,
         "checks": checks,
         "failed": failed,
@@ -2708,7 +4511,15 @@ def cmd_verify(args: argparse.Namespace) -> int:
         expect_door_center=args.expect_door_center,
         expect_window_width=args.expect_window_width,
         expect_opening_width=args.expect_opening_width,
+        expect_hatch_area=args.expect_hatch_area,
+        expect_hatch_pattern=args.expect_hatch_pattern,
+        expect_dim_measurement=args.expect_dim_measurement,
+        expect_text_content=args.expect_text_content,
+        expect_block_name=args.expect_block_name,
+        expect_layer_names=args.expect_layers,
         require=args.only,
+        unresolved_layers=args.unresolved_layer or (),
+        allow_hidden_insert=args.allow_hidden_insert,
     )
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -2812,6 +4623,50 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json_flag(opening_parser)
     opening_parser.set_defaults(func=cmd_opening)
 
+    hatch_parser = subparsers.add_parser(
+        "hatch",
+        help=(
+            "record a hatch as a closed boundary polyline plus a pattern "
+            "contract (no HATCH entity)"
+        ),
+    )
+    _add_hatch_arguments(hatch_parser)
+    _add_out_arguments(hatch_parser)
+    _add_json_flag(hatch_parser)
+    hatch_parser.set_defaults(func=cmd_hatch)
+
+    dim_parser = subparsers.add_parser(
+        "dim", help="record one dimension and read its measurement back"
+    )
+    _add_dim_arguments(dim_parser)
+    _add_out_arguments(dim_parser)
+    _add_json_flag(dim_parser)
+    dim_parser.set_defaults(func=cmd_dim)
+
+    text_parser = subparsers.add_parser(
+        "text", help="record one TEXT or MTEXT annotation"
+    )
+    _add_text_arguments(text_parser)
+    _add_out_arguments(text_parser)
+    _add_json_flag(text_parser)
+    text_parser.set_defaults(func=cmd_text)
+
+    block_parser = subparsers.add_parser(
+        "block", help="record a block definition and one instance of it"
+    )
+    _add_block_arguments(block_parser)
+    _add_out_arguments(block_parser)
+    _add_json_flag(block_parser)
+    block_parser.set_defaults(func=cmd_block)
+
+    layers_parser = subparsers.add_parser(
+        "layers", help="record LAYER table entries, in order, with asserted attributes"
+    )
+    _add_layers_arguments(layers_parser)
+    _add_out_arguments(layers_parser)
+    _add_json_flag(layers_parser)
+    layers_parser.set_defaults(func=cmd_layers)
+
     verify_parser = subparsers.add_parser(
         "verify", help="read a drawing back and check it (exit 1 on any failure)"
     )
@@ -2854,15 +4709,90 @@ def build_parser() -> argparse.ArgumentParser:
         "--expect-opening-width", type=float, default=None, metavar="MM", help="required wall-opening width"
     )
     verify_parser.add_argument(
+        "--expect-hatch-area",
+        type=float,
+        default=None,
+        metavar="MM2",
+        help="required total enclosed area of the hatch boundaries",
+    )
+    verify_parser.add_argument(
+        "--expect-hatch-pattern",
+        default=None,
+        metavar="NAME",
+        help="required hatch pattern name, e.g. ANSI31",
+    )
+    verify_parser.add_argument(
+        "--expect-dim-measurement",
+        type=float,
+        action="append",
+        default=None,
+        metavar="MM",
+        help=(
+            "required measurement of some dimension in the drawing, matched "
+            "against every dimension read back rather than only the first; "
+            "repeat the flag to require several measurements, each of which is "
+            "checked separately"
+        ),
+    )
+    verify_parser.add_argument(
+        "--expect-text-content",
+        default=None,
+        metavar="TEXT",
+        help="required annotation content, matched exactly against the read-back text",
+    )
+    verify_parser.add_argument(
+        "--expect-block-name",
+        default=None,
+        metavar="NAME",
+        help="required block definition name in the block table",
+    )
+    verify_parser.add_argument(
+        "--expect-layers",
+        nargs="+",
+        default=None,
+        metavar="NAME",
+        help=(
+            "required LAYER table entries; every one must be present. Pass all "
+            "the names after a single --expect-layers"
+        ),
+    )
+    verify_parser.add_argument(
+        "--unresolved-layer",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help=(
+            "declare a layer whose mapping is deliberately unresolved (hatch "
+            "and text report LAYER_STATUS == UNRESOLVED and make the caller "
+            "name the layer, which they then record and classify rather than "
+            "refuse; block also reports UNRESOLVED but REFUSES any name that "
+            "classifies as UNKNOWN, so it does not use this flag). "
+            "Repeatable; declared layers are excluded "
+            "from layer_semantics_mapped and listed in its detail. An "
+            "undeclared unknown layer is still a FAIL"
+        ),
+    )
+    verify_parser.add_argument(
+        "--allow-hidden-insert",
+        action="store_true",
+        help=(
+            "acknowledge that an INSERT in this drawing is intended. An INSERT "
+            "hides its definition from every downstream measurement, so it "
+            "fails insert_downstream_visibility until this is passed; the "
+            "measured hidden entity count and length stay in the report"
+        ),
+    )
+    verify_parser.add_argument(
         "--only",
-        choices=("both", "wall", "door", "window", "opening", "all"),
+        choices=VERIFY_SCOPES,
         default="both",
         help=(
             "what the drawing must contain. Default 'both' is fail-closed for "
             "wall and door: a wall that is not there, or a door that is not "
-            "there, FAILS. 'window' and 'opening' make those mandatory, and "
-            "'all' requires all four. A window or opening that is PRESENT in "
-            "the drawing is always checked, whatever this says"
+            "there, FAILS. One scope per recorder module -- wall, door, window, "
+            "opening, hatch, dim, text, block, layers -- and 'all' requires "
+            "every one of them. Anything that is PRESENT in the drawing is "
+            "always checked, whatever this says"
         ),
     )
     _add_json_flag(verify_parser)

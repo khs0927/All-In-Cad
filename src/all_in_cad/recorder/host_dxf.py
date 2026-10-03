@@ -101,6 +101,7 @@ from .transaction import (
     TransactionError,
     Txn,
     VerificationFailed,
+    _with_original_error,
     capture_state,
     dxf_verifier,
     readback_dxf,
@@ -524,19 +525,32 @@ class DxfFileHost:
         try:
             self._verifier(self.path, created)
         except Exception as exc:  # noqa: BLE001
-            self._restore_after_failed_apply()
+            try:
+                self._restore_after_failed_apply(exc)
+            except TransactionError as restore_exc:
+                # The refusal propagates (a caller seeing only `exc` would
+                # read it as harmless), but the reason the verification failed
+                # in the first place must stay reachable -- see
+                # transaction._with_original_error.
+                raise _with_original_error(restore_exc, exc) from exc
             if isinstance(exc, TransactionError):
                 raise
-            raise VerificationFailed(str(exc), report={"path": str(self.path)}) from exc
+            raise VerificationFailed(
+                str(exc), report={"path": str(self.path)}, original_error=exc
+            ) from exc
         txn.note_handles(self.path, created)
         self._applies += 1
         return result
 
-    def _restore_after_failed_apply(self) -> None:
+    def _restore_after_failed_apply(
+        self, original_error: BaseException | None = None
+    ) -> None:
         if self._txn is None:
             return
         try:
             self._txn.rollback()
+        except TransactionError as restore_exc:
+            raise _with_original_error(restore_exc, original_error) from original_error
         finally:
             self._txn = None
 

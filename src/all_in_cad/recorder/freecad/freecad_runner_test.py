@@ -474,9 +474,26 @@ def test_cli_maps_missing_executable_to_exit_code_1(script, tmp_path, capsys):
 # LIVE FreeCAD integration (skipped unless FREECAD_EXE is set)
 # =============================================================================
 FREECAD_EXE = os.environ.get("FREECAD_EXE")
-FIXTURE_DXF = Path(
-    r"C:\Users\khs09\.aside\u\0\sessions\2026-09-26_8ORnwfjJrKmHeySr\artifacts\wall_door_e2e.dxf"
-)
+
+#: [OBSERVED] Where the live fixture used to come from, and why it moved.
+#:
+#: It was a hardcoded absolute path into one Aside session's artifacts
+#: directory -- a file that was never in the repository, produced by a
+#: different task, and living in scratch space that is expected to be
+#: cleaned. Three things were wrong with that and only the first was visible:
+#:
+#:   1. on any other machine the file simply does not exist, so the test
+#:      skips -- and the skip is indistinguishable from "no FreeCAD here";
+#:   2. on this machine it existed, so the test was RUNNABLE and green for
+#:      the wrong reasons: it proved FreeCAD can open *that* file, not that
+#:      the recorder's output survives a round trip;
+#:   3. it will be deleted, and the test will start skipping for a reason
+#:      that has nothing to do with FreeCAD.
+#:
+#: The fixture is now recorded by the recorder in the test's own tmp_path, so
+#: the live test opens a drawing produced by the code under test. There is no
+#: path to hardcode and nothing outside the repository to depend on.
+FIXTURE_DXF = None  # retained name; see _record_live_fixture()
 
 LIVE_SCRIPT = '''
 import json, time
@@ -506,14 +523,59 @@ except BaseException as exc:
 '''
 
 
+def _record_live_fixture(path: Path) -> int:
+    """Record the reference wall+door drawing and return its entity count.
+
+    Recorded here rather than shipped, so the live test opens geometry the
+    recorder produced in this same run. A fixture from outside the repository
+    would let the test stay green while the recorder's output had drifted.
+    """
+    from all_in_cad.recorder.door import make_door_centered, write_door
+    from all_in_cad.recorder.wall import DXF_WRITE_VERSION, make_wall, write_wall
+    from all_in_cad.topology import Point2D
+
+    doc = fr.ezdxf.new(DXF_WRITE_VERSION) if hasattr(fr, "ezdxf") else None
+    if doc is None:
+        import ezdxf
+        doc = ezdxf.new(DXF_WRITE_VERSION)
+    write_wall(
+        doc,
+        make_wall(Point2D(0.0, 0.0), Point2D(12000.0, 0.0), 200.0, include_axis=True),
+    )
+    write_door(
+        doc,
+        make_door_centered(
+            6000.0, 0.0, 900.0, thickness_mm=200.0,
+            wall_segment=((0.0, 0.0), (12000.0, 0.0)),
+        ),
+        ("DOOR", "DOOR_ELE"),
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.saveas(str(path))
+    return len(list(doc.modelspace()))
+
+
 @pytest.mark.skipif(not (FREECAD_EXE and Path(FREECAD_EXE).is_file()),
                     reason="FREECAD_EXE not set / not found")
-@pytest.mark.skipif(not FIXTURE_DXF.is_file(), reason="fixture DXF not present")
 def test_live_freecad_verdict_record_proves_success(tmp_path):
-    """Real freecadcmd, real DXF. Asserts artifact-based adjudication and
-    records whether the stdout marker channel was alive."""
+    """Real freecadcmd, real DXF, fixture recorded by the recorder itself.
+
+    Asserts artifact-based adjudication and records whether the stdout marker
+    channel was alive.
+
+    The old magic numbers (``objects == 19``, ``shape_count == 11``) came from
+    the external artifact and are deliberately NOT asserted: they described one
+    file's FreeCAD object bookkeeping, which is FreeCAD's business, not this
+    recorder's. What is this recorder's contract is that the recorded drawing
+    opens, keeps its five named layers, and produces one shape per entity --
+    so the count is derived from the drawing this test just made. [BLOCKED] on
+    any host without a real freecadcmd: the assertions below have not been
+    executed here, and the skip says so rather than passing quietly.
+    """
+    fixture = tmp_path / "recorded_wall_door.dxf"
+    entity_count = _record_live_fixture(fixture)
     src = tmp_path / "probe.py"
-    src.write_text(f"DXF = {str(FIXTURE_DXF)!r}\n" + LIVE_SCRIPT, encoding="utf-8")
+    src.write_text(f"DXF = {str(fixture)!r}\n" + LIVE_SCRIPT, encoding="utf-8")
     res = fr.run_freecad_script(
         src, freecad_exe=FREECAD_EXE, timeout=180,
         workdir=tmp_path, expect_artifacts=["out/aic_verdict.json"],
@@ -523,10 +585,29 @@ def test_live_freecad_verdict_record_proves_success(tmp_path):
           "| STATUS:", res.status, "| EVIDENCE:", res.evidence)
     assert res.status == fr.STATUS_OK
     assert res.evidence == fr.EV_VERDICT
-    assert res.verdict["objects"] == 19
-    assert res.verdict["shape_count"] == 11
+    assert res.verdict["shape_count"] == entity_count, (
+        f"FreeCAD built {res.verdict['shape_count']} shapes from a drawing "
+        f"with {entity_count} entities; the round trip lost or merged geometry"
+    )
     for layer in ("CEN1", "WAL1", "WAL2", "DOOR", "DOOR_ELE"):
         assert layer in res.verdict["layers"]
+
+
+def test_the_live_fixture_needs_no_path_outside_the_repository() -> None:
+    """The portability guard, asserted so it cannot rot back.
+
+    A hardcoded absolute path to someone's session artifacts directory is not
+    a fixture, it is a countdown. This test does not need FreeCAD: it only
+    checks that recording the fixture works from a directory the repository
+    has never heard of, which is the property the old path destroyed.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as raw:
+        made = Path(raw) / "deep" / "recorded.dxf"
+        count = _record_live_fixture(made)
+        assert made.is_file()
+        assert count == 11, f"expected the 11-entity reference case, got {count}"
 
 
 # ------------------------------------------- live-regression guards -----------

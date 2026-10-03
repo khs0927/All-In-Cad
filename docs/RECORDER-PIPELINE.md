@@ -181,7 +181,7 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 ## 4. 모듈별 계약
 
 `Point2D` 는 `topology.py` · 스냅샷은 `readback.py` · 레이어 분류는 `semantic_layers.py` 에서 온다.
-모든 기록기는 **LINE / ARC 만 쓴다. INSERT 도 HATCH 도 없다.**
+기본 도형은 **LINE / ARC** 다. HATCH 엔티티는 금지하지만, INSERT 는 허용하며 기본 block 모드는 `flatten` 이다. INSERT 를 남길 때는 `insert_downstream_visibility` 가 하류 가시성을 검사한다.
 
 ### `wall.py` — 벽
 
@@ -190,7 +190,7 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 | `make_wall(start, end, thickness_mm, layers=None, *, include_axis=False, cap_style="line", detail_ratios=(), trim_ratios=()) -> WallGeometry` | 두 면이 중심선에서 정확히 `±thickness/2` 에 놓인다 |
 | `write_wall(doc, wall, doc_layer_centers=("WAL1","WAL2","WAL3")) -> WallRecord` | **LINE 전용.** 문서 버전이 R2018 아니면 `ValueError` |
 | `layer_plan(doc_layer_centers, *, axis_layer="CEN1") -> LayerPlan` | 정확히 3개 이름, 비어있으면 `ValueError` |
-| `observed_layer_plan() -> LayerPlan` | 관측된 XiCAD 레이어 배정을 재현 |
+| `observed_layer_plan() -> LayerPlan` | **[설계]** 관측과 유사한 레이어 배정을 만드는 도구. 관측 재현이 아니다 (캡 2개를 `C` 에 얹는다) |
 
 **검증:** 좌표 유한 / 두께 유한·양수 / 중심선 길이 양수 / `cap_style ∈ {line, miter, none}`.
 그 외는 `WallValidationError`.
@@ -199,14 +199,28 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 (`AXIS` 1 + `FACE_NEG` 1 + `FACE_POS` 1 + `CAP_START` 1 + `CAP_END` 1).
 
 **레이어 (관측 매핑):** face→`WAL1`, cap→`WAL2`, trim→`WAL2`, detail→`WAL3`, axis→`CEN1`.
+이 중 `face`→`WAL1`(=`C`)과 `axis`→`CEN1`(=`0`)만 **관측과 정합**하다. `trim`/`detail` 은 [설계]다.
 
 > **이중 명명 체계 경고 (관측).** 실 ZWCAD에서 그린 벽의 덤프는 `0` / `C` / `S` / `F` 를 쓴다.
 > 이 저장소의 관례(`semantic_layers.py`, `configs/architectural-layers.json`)는
 > `WAL1/WAL2/WAL3` 와 `CEN1` 이다. 표에 `C`/`S`/`F` 항목이 아예 없다.
-> 둘은 **같은 역할에 대한 서로 다른 명명 체계**다. `OBSERVED_XICAD_LAYERS` 로 관측 매핑이 그대로 노출되고
+> 둘은 **같은 역할에 대한 서로 다른 명명 체계**다. 관측된 레이어 이름은
+> `OBSERVED_XICAD_LAYERS` 로, 관측된 좌표는 `OBSERVED_XICAD_LINE_OFFSETS_MM` 로 그대로 노출되고
 > `observed_layer_plan()` 으로 선택할 수 있으나 **기본 출력은 이 저장소 관례**다.
-> `OBSERVED_DETAIL_RATIOS = (-1.2, 2.5, 2.8, 2.0)` 는 **추정**이다 — 덤프가 좌표를 증명할 뿐
-> 그 의미는 증명하지 않는다.
+> `hatch.py`/`text.py` 의 `KNOWN_*_LAYERS = ()` 와 같은 규칙이다 — 관측된 이름이
+> 프로젝트 관례에 없으므로 이 매핑은 **관측으로 해소되지 않았다.** (`dim.py` 의
+> `LAYER_MAPPING_RESOLVED = True` 와 달리 이 모듈에는 해당 플래그가 없다.)
+>
+> **정정 (W5 재검증 반영):**
+> - **"벽 9개 엔티티" → [설계].** 덤프는 `0`:1 + `C`:2 + `S`:3 + `F`:1 = **7** 이다.
+>   덤프에 **캡 선이 없다.** 9 는 캡 2개를 몰래 더해야 성립하므로 관측이 아니다.
+>   기본 출력 5개(axis 1 + face 2 + cap 2)도 관측 재현이 아니다.
+> - **`S`="trim" / `F`="detail" → [설계].** 덤프가 증명하는 것은 좌표뿐이다.
+> - **캡 2개 → [설계].** 관측 목록에 없다.
+> - `DESIGN_SF_TRIM_RATIOS` / `DESIGN_SF_DETAIL_RATIOS` 로 **나뉘어** 넘겨야 관측과 같은
+>   레이어 분배가 나온다. `DESIGN_SF_OFFSET_RATIOS` 네 개를 통째로 `detail_ratios` 로
+>   넘기면 **4개 전부 `F` 로 간다** — 관측 재현이 아니며, 이를 고정하는 테스트가
+>   `wall_test.py` 에 있다.
 
 ### `door.py` — 문
 
@@ -281,21 +295,139 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 
 `--json` 은 stdout 을 단일 기계가독 JSON 객체로 바꾼다. 각 JSON 결과는 `"byte_idempotent": false` 를 실는다.
 
-**`verify` 의 검사 수**
+**`verify` 검사 수와 목록**
 
-| 조건 | 검사 수 | 실측 |
-|---|---|---|
-| 기본 (`--only both`) | **15** | `RESULT: PASS (15 checks)` |
-| `--expect-entities/--expect-wall-thickness/--expect-door-width/--expect-door-center` 를 모두 준 경우 | **19** | `RESULT: PASS (19 checks)` |
+실행 조건에 따라 검사 수가 달라지므로 수치 스냅샷은 두지 않는다. 아래 이름 목록은 실제 `_check` 호출에서 추출되며 자동 검사로 코드와 대조한다.
 
-15개 기본 검사 이름: `entity_count_reported`, `no_insert_or_hatch`, `layer_semantics_mapped`,
-`wall_thickness_positive`, `wall_faces_equal_length`, `wall_cap_length_equals_thickness`,
-`centerline_midway_between_faces`, `door_present`, `door_single_swing_arc`,
-`door_opening_edges_identified`, `door_opening_width_positive`,
-`door_opening_width_matches_swing_arc`, `door_hinge_on_an_opising_edge`,
-`door_hinge_offset_is_half_width`, `door_frame_lines_parallel_to_opening_edges`.
-추가 4개는 기대값 대조 검사다.
-`--only {both,wall,door}` — 기본 `both` 는 **fail closed** 이다.
+검사 이름은 `cli.py` 의 `verify` 구현에서 추출해 `tests/test_doc_code_consistency.py` 가 문서와 동기화한다.
+
+코드에서 추출한 검사 이름 (이 목록은 자동 검사 대상):
+
+`block_definition_present`
+`block_name_matches_expectation`
+`centerline_midway_between_faces`
+`dim_measurement_is_readable`
+`dim_measurement_matches_expectation`
+`dim_measurement_positive`
+`dim_present`
+`dim_text_matches_measurement`
+`door_center_matches_expectation`
+`door_frame_lines_parallel_to_opening_edges`
+`door_hinge_offset_is_half_width`
+`door_hinge_on_an_opening_edge`
+`door_opening_edges_identified`
+`door_opening_width_matches_swing_arc`
+`door_opening_width_positive`
+`door_present`
+`door_single_swing_arc`
+`door_width_matches_expectation`
+`entity_count_matches_expectation`
+`entity_count_reported`
+`hatch_area_matches_expectation`
+`hatch_area_positive`
+`hatch_boundary_is_closed`
+`hatch_pattern_matches_expectation`
+`hatch_pattern_name_present`
+`hatch_present`
+`hatch_vertex_count_at_least_three`
+`insert_downstream_visibility`
+`layer_names_match_expectation`
+`layer_semantics_mapped`
+`layers_table_has_content`
+`no_hatch_entity`
+`opening_boundary_crosses_wall_thickness`
+`opening_boundary_edges_centred_on_centreline`
+`opening_boundary_edges_identified`
+`opening_boundary_perpendicular_to_face_line`
+`opening_boundary_spans_equal_wall_thickness`
+`opening_boundary_symmetric_about_wall_centreline`
+`opening_centre_tick_is_half_thickness`
+`opening_layers_are_inert_temp_layers`
+`opening_present`
+`opening_ticks_are_45_degree`
+`opening_width_matches_expectation`
+`opening_width_matches_face_line`
+`text_content_matches_expectation`
+`text_content_non_empty`
+`text_height_is_positive_finite`
+`text_present`
+`wall_cap_length_equals_thickness`
+`wall_caps_present`
+`wall_centerline_reported`
+`wall_faces_equal_length`
+`wall_measurable`
+`wall_thickness_matches_expectation`
+`wall_thickness_positive`
+`window_bars_centred_on_centreline`
+`window_bars_perpendicular_to_width_axis`
+`window_bars_spaced_evenly_within_opening`
+`window_bars_within_opening_width`
+`window_casement_arc_hinges_on_the_jamb`
+`window_casement_arc_radius_matches_opening`
+`window_glazing_line_identified`
+`window_interior_face_line_present`
+`window_interior_face_offset_is_half_thickness`
+`window_interior_side_agrees_with_casement_sweep`
+`window_jamb_edges_centred_on_centreline`
+`window_jamb_edges_perpendicular_to_width_axis`
+`window_jamb_edges_span_equal_thickness`
+`window_opening_width_matches_glazing_line`
+`window_present`
+`window_single_casement_arc`
+`window_width_matches_expectation`
+
+특히 `no_hatch_entity` 는 HATCH 금지 검사이며 `insert_downstream_visibility` 는 허용된 INSERT 의 하류 가시성 계약이다. `--only {both,wall,door}` — 기본 `both` 는 **fail closed** 이다.
+
+#### 기록기 5종의 레이어 인자 계약 (`hatch` / `dim` / `text` / `block` / `layers`)
+
+`--layer` 계열 인자는 **명령마다 형태가 다르며, 세 갈래로 나뉜다.**
+
+| 서브커맨드 | 플래그 | 필수 여부 | 근거 |
+|---|---|---|---|
+| `hatch` | `--layer` | **필수** (`required=True`) | `HATCH_LAYER_STATUS == 'UNRESOLVED'` |
+| `text` | `--layer` | **필수** | `TEXT_LAYER_STATUS == 'UNRESOLVED'` |
+| `block` | `--entity-layer` | **필수** (`required=True`) | `OPENING_BLOCK_LAYER_STATUS == 'UNRESOLVED'` |
+| `dim` | `--layer` | **필수 아님 — 기본값 `DIM`** | `dim.LAYER_MAPPING_RESOLVED = True` |
+| `layers` | `--set` | **`--layer` 아님** (`--set` 또는 `--expect-layers` 폴백) | LAYER 테이블 기록이라 엔티티 레이어가 없다 |
+
+**`dim` 은 예외다 (W6 CLI 감사 LOW-3 정정).** `--layer` 가 필수인 것은 `dim` 이 아니다.
+`--layer` 의 기본값은 `DEFAULT_DIM_LAYERS[0] == "DIM"` 이고, `classify_layer('DIM')` 은
+`LayerSemantic.DIMENSION` 이라 **UNKNOWN 이 아니다** (실측: `HATCHX`/`TEXTX`/`ELX` 는 모두 UNKNOWN).
+그래서 기본값이 관측된 이름으로 안전하다. `dim` 의 `verify_hint` 가 `--unresolved-layer` 를
+붙이지 않는 유일한 기록기인 것도 같은 이유이며, 붙이지 않은 힌트가 실제로 exit 0 이다.
+
+**`block` 의 "호출자가 레이어를 지정한다" 는 UNRESOLVED 이야기의 절반만 진술이다 (W6 CLI 감사 LOW-4 정정).**
+`OPENING_BLOCK_LAYER_STATUS` 가 `UNRESOLVED` 이므로 호출자가 이름을 주는 것은 맞다.
+다만 **허용되는 이름 집합은 8개로 고정되어 있지 않다.** `block._validate_layer` 가 실제로 거부는 것은
+**`classify_layer` 가 UNKNOWN 을 돌려주는 이름**이며, `CONVENTION_BLOCK_LAYERS` 8개는 그 거부의
+**오류 메시지에 실리는 권장 목록**일 뿐 목록 검증 자체가 아니다 (block.py:1313-1331).
+
+```
+허용 = classify_layer(name) is not LayerSemantic.UNKNOWN
+거부 = 그 외 (BlockValidationError → exit 2)
+```
+
+실측으로 `WALL` 과 `A-WALL` 은 `wall` 로 분류되어 **허용**된다 (8개 목록에 없음에도 통과).
+즉 "8개 중에서만 허용" 으로 적는 것은 코드와 반대이고, 정확한 문장은
+"**UNKNOWN 으로 분류되는 이름은 거부되고, `CONVENTION_BLOCK_LAYERS` 8개
+(`WAL1`/`WAL2`/`WAL3`/`DOOR`/`DOOR_ELE`/`WIN`/`WINBAR`/`WINELE`) 는 권장 목록**" 이다.
+
+거부 시 메시지는 다음과 같고 종료 코드는 2 다 (exit 2 실측).
+
+```
+error: block rejected: layer 'ELX' classifies as UNKNOWN in the project convention
+and is refused. Use one of ['WAL1', 'WAL2', 'WAL3', 'DOOR', 'DOOR_ELE', 'WIN', 'WINBAR', 'WINELE'];
+this module invents no new layer name.
+```
+
+`--instance-layer` 는 기본값이 없고 내용에서 유도되며, 유효하지 않은 이름도 exit 2 로 거부된다.
+`block` 의 `verify_hint` 도 `--unresolved-layer` 를 붙이지 않는다 — 그 레이어는 관측된 개구부
+레이어(unknown)가 아니라 실제 기하 레이어이기 때문이다.
+
+**요약 (정정된 문장):** 레이어 관측 자체는 **UNRESOLVED** 이며, 호출자가 이름을 지정하되
+그 이름이 `UNKNOWN` 으로 분류되면 거부된다. `CONVENTION_BLOCK_LAYERS` 8개는 그 목록 검증이
+아니라 거부 메시지의 권장 목록이다. `dim` 만 유일하게 `--layer` 기본값(`DIM`)을 갖고,
+나머지 작성기(`hatch`/`text`/`block`) 는 필수다.
 
 **멱등성 [관측, 고치지 않기로 명시함]:** 같은 인자로 `plan` 을 두 번 돌리면
 두 번 다 11 엔티티지만 **SHA-256 이 서로 다르다.** ezdxf 가 매 save 마다 문서 메타데이터
@@ -369,12 +501,12 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 | # | 항목 | 근거 |
 |---|---|---|
 | O-1 | 벽 기하: 두 면이 중심선에서 정확히 `±thickness/2`. 두 면 길이 동일, 캡 길이 = 두께 | `verify` 실측 (200mm 벽, 델타 0), `wall_test.py` |
-| O-2 | 실제 CAD에서 그려진 벽 9개 엔티티가 **전부 LINE** 이었다 | `SPEC.md` §2.4, `wall.py` docstring |
+| O-2 | 실제 CAD에서 그려진 벽의 엔티티가 **전부 LINE** 이었다 (개수는 **7** — §5-미확정 및 `wall.py` docstring 참조) | `SPEC.md` §2.4, `wall.py` docstring, `OBSERVED_XICAD_LINE_OFFSETS_MM` |
 | O-3 | 노멀라이저(`topology.py:segments_from_entities`)가 블록 INSERT 를 전개하지 않고 HATCH 를 파싱하지 않는다. `geometry.start`/`end` 또는 `geometry.points` 만 읽는다 | `SPEC.md` §2.4 |
 | O-4 | 레이어 매핑: 벽 = `WAL1/WAL2/WAL3`, 중심선 = `CEN1`, 문 = `DOOR`/`DOOR_ELE`, 창 = `WIN`/`WINBAR`/`WINELE`. 모두 `configs/architectural-layers.json` 에 **기존** 항목이며 새 이름은 발명되지 않았다 | `verify` 실측: `{'CEN1':'centerline','DOOR':'door','DOOR_ELE':'door','WAL1':'wall','WAL2':'wall'}` |
 | O-5 | `DOOR_ELE` 은 복원된 DCL 항목 `DoorEle_rdo '문틀 입면선'` 에 대응 | `door.py` docstring |
 | O-6 | 문 폭 프리셋 `(30,60,90,120,150,180)` | `door.py: WIDTH_PRESET_MM` |
-| O-7 | **확정 수치: 문 폭 900mm, 창 폭 1500mm** | `window.py` / `opening.py` docstring |
+| O-7 | **확정 수치: 문 폭 900mm, 창 폭 1500mm** (`<;900.0` 이 바이너리에서 확인됨. 단 **힌지 좌표 5550 은 관측이 아니라** 6000−900/2 로 파생된 [설계] 값이다) | `window.py` / `opening.py` docstring, `xiWin.fas` 리소스 스트림 |
 | O-8 | `xiWin2`, `xiWallOpening` 프롬프트 순서 (위 §4 인용) | 런타임 캡처, 높은 확신 |
 | O-9 | freecadcmd 는 출력 파일을 만들고 19 오브젝트를 만들고 exit 0 을 반환하면서 **stdout 을 비웠다** | `freecad_runner.py` docstring 실측 |
 | O-10 | 6개 런타임 함정 (종료자 누락 / 유휴 빈 Enter / 포커스 의존 / 미실행 명령 undo / 네이티브-LISP 호출 형태 / 카운터 일시 0) | `SPEC.md` §3 표 |
@@ -395,7 +527,7 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 | D-8 | 벽 `cap_style="miter"` 의 45° 베벨 | 두 벽이 직각으로 만나는 경우에 필요. 관측된 결합이 아니다 |
 | D-9 | `host_dxf.py` 의 프롬프트 문자열 | 벡터 계약을 검사 가능하게 만들기 위해 **어댑터 편집 단계를 렌더링한 것**이며, 어떤 CAD 가 출력하는 문자열이 아니다 |
 
-### 5.3 `[미확정]` — 확인하지 못한 것 (6항목)
+### 5.3 `[미확정]` — 확인하지 못한 것 (9항목)
 
 | # | 항목 | 상태 |
 |---|---|---|
@@ -403,8 +535,11 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 | U-2 | **문 두께 기본값** | `DoorThk_edt` 이름만 있고 값 미확인. `100.0` 은 D-5 설계값 |
 | U-3 | **창틀(mullion) 배치** | `WinBarLay_edt` '창틀 켜', `WinDiv_edt` '창 등분 갯수', `WinDivWd` '양개문 시작길이' 라벨은 복원되었으나 기본값 미확인. 실내측 점이 `interior_side` 를 결정한다는 것만 관측 |
 | U-4 | **`xiDoor2` 의 3단계(단계별) 존재 여부** | `xiWin2`·`xiWallOpening` 의 프롬프트 순서는 캡처되었으나 `xiDoor2` 의 단계 수는 **확인되지 않았다** |
-| U-5 | `OBSERVED_DETAIL_RATIOS = (-1.2, 2.5, 2.8, 2.0)` 의 의미 | 덤프가 좌표를 증명할 뿐 `S`/`F` 레이어의 **의미**를 증명하지 않는다. 문서화된 추측이며 다른 두께로 리스케일하는 용도로만 쓴다 |
+| U-5 | `DESIGN_SF_TRIM_RATIOS` / `DESIGN_SF_DETAIL_RATIOS` (= 관측 S/F 좌표의 half-thickness 배율) 의 **의미** | 덤프가 좌표(-120/+250/+280/+200)만 증명하고 `S`/`F` 레이어의 **의미**를 증명하지 않는다. 문서화된 추측이며 다른 두께로 리스케일하는 용도로만 쓴다. 상수명도 `OBSERVED_` → `DESIGN_` 으로 정정 (W5) |
 | U-6 | freecadcmd 가 **한 번** stdout 을 비운 **원인** | 미확정. 재현되지도 않지만(같은 호스트의 live 실행에서 마커가 보였다) 채널이 간헐적으로 죽는다는 사실만으로 의존 불가 |
+| U-7 | **문 계약 프롬프트의 순서 (입력 → 힌지측 점 지정)** | **미해결.** `xiWin.fas` 리소스 스트림 안의 문자열 블록은 `경첩측 점 지정`(@15326, @15344) 이 `문 폭 입력 <;900.0`(@15369) **앞에** 있다. 런타임 캡처는 반대(폭 먼저)를 본다고 기록되어 있어 **둘이 설명되지 않는다.** 문자열 테이블 순서는 실행 순서와 무관할 수 있으므로 이 사실만으로 반증도 안 되지만, 순서를 지지하는 바이너리 증거도 없다 → **[설계]/미해결** 로 강등 (W5) |
+| U-8 | 문 프롬프트의 **`>> ` 접두사와 `:` 접미사** | 바이너리에는 접두사·접미사 **없는** `문 폭 입력 <;900.0`(18B) 과 `경첩측 점 지정 <_nea>: ` (23B) 만 존재한다. `>> `/`:` 는 런타임 콘솔 서식으로 **보여야 하며** [설계]다. 두 문자열의 **존재와 900.0 수치**는 관측이다 |
+| U-9 | 문자열 인코딩의 **이름** (`CP949`) | 해당 바이트 범위에서 **CP949 와 EUC-KR 이 완전히 동일**하다. 바이너리는 둘을 구분할 수 없으므로 "CP949 로 찾았다"는 진술은 [추정] 이다. 바이트 일치만 관측 |
 
 > **부수 확인 불가:** `artifacts/w1-port.md`(이식 분석 1순순서 0→8)는 이 저장소에 **존재하지 않는다.**
 > `docs/` 하위 `*.md` 전체를 훑었으나 없다. 따라서 1순순서 0→8 항목은 명세에 반영되지 않았다.
@@ -487,7 +622,8 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 
 | # | 못 하는 것 | 왜 |
 |---|---|---|
-| L-1 | **DWG 미지원** | 전 스택이 ezdxf DXF 전용이다. 쓰기 R2018(AC1032), 읽기 하한 R2000(AC1015). DWG 는 어디에도 없다 |
+| L-1 | **DWG 읽기는 있으나, DWG 쓰기는 없다** | 읽기는 다중 레인이다: ACadSharp(MIT, `native/headless/AllInCad.ACadSharpProbe.exe`)가 DWG 를 직접 파싱하고, ODA File Converter(외부 실행 파일)가 DWG→DXF 로 변환한 뒤 ezdxf 가 IR 을 만든다. 둘 다 기존 `EntitySnapshot` IR 으로 수렴한다. **기록(write)은 여전히 ezdxf DXF 전용이며 DWG 기록 경로는 존재하지 않는다.** 측정 근거(2026-09-28, 이 호스트): 184개 DWG 를 ACadSharp 로 파싱해 전건 성공, ACadSharp 직접 읽기와 ODA→ezdxf 경유 읽기가 같은 파일에서 같은 엔티티 수(93=93)를 냈고 레이어명과 좌표가 살아 있었다. **미증명**: HATCH·ELLIPSE·SPLINE·POINT·SOLID 는 엔티티로 세어지나 `geometry: {}` 로 돌아와 정규화 형상이 폐기된다. 두 레인의 정규화 결과가 바이트 단위로 동일한지도 미검증이다 |
+| L-1b | **DWG 쓰기 미지원** | ezdxf 는 DWG 를 쓰지 못하며 이 스택에 이를 우회하는 코드도 없다. DWG 로 내보내려면 외부 도구(GPL-3.0 LibreDWG 등)를 **실행 파일 경계 밖**으로 불러야 하므로, GPL 코드를 산출물에 링크하지 않는다는 라이선스 결정을 그대로 유지한다 |
 | L-2 | **3D 미지원** | 모든 기록기가 Z=0 평면이다. 3D 엔티티를 쓰거나 읽는 코드가 없다 |
 | L-3 | **FreeCAD 는 열람 전용 — 내보내기 시 레이어 소실** | FreeCAD 는 사람이 여는 검증용 호스트이지 실행 주체가 아니다 (SPEC §2.4). 내보내기 경로에서 레이어가 보존된다는 보장은 없다 |
 | L-4 | **상태기계가 fake 호스트에서 통과한 사실은 실 CAD 동작 증거가 아니다** | 14개 벡터 통과는 이 상태기계가 **명세의 판정 로직**을 구현한다는 증거일 뿐이다. 벡터는 실 호스트 실험이 아니라 **원본 C# 러너에서|authoring된 오라클**이다. 실 CAD 가 이 프롬프트를 이 시점에 내는지, 이 문자열을 출력하는지는 **증명되지 않았다** (SPEC §6) |
@@ -524,7 +660,7 @@ GV-05 가 이를 직접 고정한다. 파일 기반 스택에서는 이 위험 �
 | **P1** | **U-1 개구부 레이어 소속** 해소 | 개구부가 실제로 들어간 ZWCAD 도면 1장 관측. **추론으로는 해소하지 않는다** (코드에 명시된 금지) |
 | **P1** | **U-4 `xiDoor2` 3단계 존재 여부** 확인 | ZWCAD 실행 필요 — 이 스택의 범위 밖. 별도 승인 |
 | **P1** | **U-2 문 두께 / U-3 창틀 배치 기본값** 확정 | `DoorThk_edt`·`WinBarLay_edt`·`WinDiv_edt` 실Dialog 캡처 |
-| **P2** | **L-1 DWG 지원** | 큰 작업. ezdxf 의 DWG는 읽기 전용 경로가 제한적이다. 지원 범위(읽기/쓰기)를 먼저 결정 |
+| **P2** | **L-1b DWG 쓰기** | 읽기 레인(ACadSharp/ODA)은 이미 실측 동작하므로 남은 일은 형상 공백(HATCH 등)과 정규화 동일성 검증이다. **쓰기**만 미구현이며, ezdxf 단일 진실원을 유지하려면 외부 변환기 경계를 새로 설계해야 한다. GPL-3.0 도구를 산출물에 포함하지 않는다는 결정을 먼저 유지할지 결정해야 하는 작업이다 |
 | **P2** | **L-2 3D** | 벽·문을 3D로 올리는 것은 토폴로지 소비자의 계약 변경을 동반한다 |
 | **P2** | **L-4 실 CAD 호스트 검증** | ZWCAD 실행 + COM + 키입력 — **이 스택과 이 문서화 작업의 범위 밖.** 실 호스트에서 GV-01~14 를 돌려 "명세가 진짜인지" 확인해야 명세 §6 의 미확정 항목이 해소된다. **이것이야말로 진짜 다음 큰 문이다** |
 | **P2** | **L-5 명령 커버리지 확장** | 현재 4종 기록기. 408개 XiCAD 명령 중 나머지 분류 |

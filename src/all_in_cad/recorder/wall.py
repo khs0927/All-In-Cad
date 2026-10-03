@@ -21,28 +21,58 @@ clear both variables before running this module's tests::
 This is a host quirk of the launcher, not a defect in this module.
 
 =====================================================================
-LAYER NAMING: THE OBSERVED XiCAD ZWCAD LAYERS AND THE PROJECT CONVENTION
-ARE TWO DIFFERENT NAME SYSTEMS -- DO NOT CONFUSE THEM
+LAYER NAMING: TWO NAME SYSTEMS. OBSERVED AND DESIGN ARE NOT THE SAME
 =====================================================================
-Observed (entity dump of a wall actually drawn in ZWCAD by the running module,
-centreline (0,0)->(12000,0), all entities were LINE, all units mm):
+[OBSERVED] Entity dump of a wall actually drawn in ZWCAD by the running
+module (centreline (0,0)->(12000,0), all entities were LINE, all units mm).
+Y is the offset from the centreline:
 
-    layer "0" : centreline LINE (0,0)->(12000,0)
-    layer "C" : LINE Y=-100, LINE Y=+100        (two faces, thickness 200)
-    layer "S" : LINE Y=-120, LINE Y=+250, LINE Y=+280
-    layer "F" : LINE Y=+200
+    layer "0" : LINE Y=0                                  1 entity
+    layer "C" : LINE Y=-100, LINE Y=+100                  2 entities
+    layer "S" : LINE Y=-120, LINE Y=+250, LINE Y=+280     3 entities
+    layer "F" : LINE Y=+200                               1 entity
 
-This repository's convention (``src/all_in_cad/semantic_layers.py`` and
-``configs/architectural-layers.json``) instead names wall layers
+That is 1 + 2 + 3 + 1 = **7 entities**, and the same 7 offsets are exposed as
+:data:`OBSERVED_XICAD_LINE_OFFSETS_MM`. Thickness 200 -> the two faces at
++/-100 and the centreline at 0 is [OBSERVED] and is reproduced exactly by
+``make_wall``.
+
+[DESIGN] **"9 entities".** Not supported by the dump. 9 only works if two
+end-cap lines are quietly added to the tally, and the dump contains no caps:
+layer "C" is exactly the two faces at -100/+100. The number 9 is therefore a
+[DESIGN] claim and this module does not make it. See
+:data:`OBSERVED_XICAD_LINE_OFFSETS_MM` for the count that was actually seen.
+
+[DESIGN] **The roles of "S" and "F" ("trim", "detail", "soffit").** The dump
+proves the four coordinates and nothing else. Neither the drawing nor the
+recovered binary says what those lines are -- -120 is 20 mm outside the wall
+face, +250/+280 are 150/180 mm outside it, which is consistent with a ceiling
+cornice, a soffit, a floor mark, or nothing in particular. Only
+``C -> the two faces`` is consistent with the dump; everything else here is a
+documented guess. :data:`classify_layer` confirms the gap: ``"C"``/``"S"``/
+``"F"``/``"0"`` all classify to ``LayerSemantic.UNKNOWN`` [OBSERVED].
+
+[DESIGN] **Cap lines.** The dump has none. ``make_wall`` emits two by default
+(``cap_style="line"``) because a bounded wall needs ends, but that is this
+module's choice, not a reproduction of the dump. Note that the default output
+is 5 entities, not 7 and not 9, because it does not emit the S/F lines unless
+ratios are passed.
+
+The project convention (``src/all_in_cad/semantic_layers.py`` and
+``configs/architectural-layers.json``) names wall layers
 ``WAL1``/``WAL2``/``WAL3`` (all classifying to ``LayerSemantic.WALL``) and
 centreline layers ``CEN``/``CEN1`` (classifying to ``LayerSemantic.CENTERLINE``).
-There is no ``C``/``S``/``F`` entry in that table at all.
+There is no ``C``/``S``/``F`` entry in that table at all, so -- exactly as in
+``hatch.py`` (``KNOWN_HATCH_LAYERS = ()``) and ``text.py``
+(``KNOWN_TEXT_LAYERS = ()``) -- the XiCAD-to-project mapping is NOT resolved by
+observation. Unlike ``dim.py``'s ``LAYER_MAPPING_RESOLVED = True`` (where
+``DIM`` exists in the config), nothing here resolves ``C``/``S``/``F``.
 
-So: the observed ZWCAD layers and this project's layer convention are DIFFERENT
-NAMING SYSTEMS for the same roles. Nothing is renamed away here: the observed
-mapping is exposed verbatim as :data:`OBSERVED_XICAD_LAYERS` and can be selected
-at runtime, while the DEFAULT output uses this repository's WAL1/WAL2/WAL3
-convention as instructed. No new layer names are invented by this module.
+The observed layer names are exposed verbatim as
+:data:`OBSERVED_XICAD_LAYERS` and can be selected at runtime, while the DEFAULT
+output uses this repository's WAL1/WAL2/WAL3 convention. No new layer names are
+invented by this module. Read :func:`observed_layer_plan` before trusting it: it
+is a [DESIGN] reproduction aid, not an observed configuration.
 
 Layer selection is ``doc_layer_centers=("WAL1", "WAL2", "WAL3")``: face lines,
 cap lines, and detail lines respectively. The optional axis line defaults to
@@ -68,7 +98,11 @@ except ImportError:  # pragma: no cover - direct/flat execution fallback
 
 __all__ = [
     "DEFAULT_DOC_LAYER_CENTERS",
+    "DESIGN_SF_DETAIL_RATIOS",
+    "DESIGN_SF_OFFSET_RATIOS",
+    "DESIGN_SF_TRIM_RATIOS",
     "OBSERVED_XICAD_LAYERS",
+    "OBSERVED_XICAD_LINE_OFFSETS_MM",
     "LayerPlan",
     "WallGeometry",
     "WallRecord",
@@ -91,24 +125,49 @@ DEFAULT_DOC_LAYER_CENTERS: tuple[str, str, str] = ("WAL1", "WAL2", "WAL3")
 #: Existing project layer name for centrelines (``LayerSemantic.CENTERLINE``).
 DEFAULT_AXIS_LAYER = "CEN1"
 
-#: Observed XiCAD/ZWCAD module layers -> project-convention layer names.
-#: OBSERVED: the drawing dumped from ZWCAD used these literal layer strings.
+#: The literal layer strings seen in the ZWCAD dump [OBSERVED]. The *mapping* of
+#: those strings onto project roles is NOT observed -- see the module docstring.
 #: PROJECT:  what this repository calls the same role.
 OBSERVED_XICAD_LAYERS: dict[str, str] = {
-    "0": DEFAULT_AXIS_LAYER,  # OBSERVED centreline on layer "0"
-    "C": "WAL1",  # OBSERVED the two wall faces
-    "S": "WAL2",  # OBSERVED three trim/soffit lines
-    "F": "WAL3",  # OBSERVED one face/detail line
+    # [OBSERVED] layer name and the count of lines on it; the role below is
+    # [DESIGN] unless marked.
+    "0": DEFAULT_AXIS_LAYER,  # OBSERVED 1 line, Y=0; centreline role is consistent
+    "C": "WAL1",  # OBSERVED 2 lines, Y=-100/+100; "the two faces" is consistent
+    "S": "WAL2",  # OBSERVED 3 lines, Y=-120/+250/+280; role [DESIGN], unnamed
+    "F": "WAL3",  # OBSERVED 1 line, Y=+200; role [DESIGN], unnamed
 }
 
-#: Estimated ratio of the observed detail lines to the half-thickness.
-#: ESTIMATION (not an observation): the observed detail lines sat at absolute
-#: offsets -120, +250, +280, +200 mm from the centreline of a 200 mm wall
-#: (half = 100 mm), i.e. -1.2, 2.5, 2.8, 2.0 half-thicknesses. The dump proves
-#: the coordinates; it does NOT prove the semantic meaning of the S/F layers,
-#: so the ratios are a documented guess used only to rescale the same shape to
-#: other thicknesses. Set ``detail_ratios=()`` to omit them.
-OBSERVED_DETAIL_RATIOS: tuple[float, ...] = (-1.2, 2.5, 2.8, 2.0)
+#: The dump itself, as measured: layer name -> Y offsets from the centreline
+#: (mm) of a 200 mm wall. [OBSERVED] -- these are the numbers, nothing more.
+#: Total entity count is ``sum(len(v) for v in ...)`` = 1+2+3+1 = **7**.
+OBSERVED_XICAD_LINE_OFFSETS_MM: dict[str, tuple[float, ...]] = {
+    "0": (0.0,),
+    "C": (-100.0, 100.0),
+    "S": (-120.0, 250.0, 280.0),
+    "F": (200.0,),
+}
+
+#: [DESIGN] How many of the observed S/F lines this module routes to
+#: :attr:`LayerPlan.trim` (which lands on the "S"/``WAL2`` layer). The dump
+#: proves 3 lines on "S"; that the 3 lines are a single trim-like feature is a
+#: guess, and it is a guess that has to be *split out* by the caller because
+#: ``trim_ratios`` and ``detail_ratios`` are separate parameters.
+DESIGN_SF_TRIM_RATIOS: tuple[float, ...] = (-1.2, 2.5, 2.8)
+
+#: [DESIGN] The remaining observed line (Y=+200 -> +2.0 half-thicknesses) routed
+#: to :attr:`LayerPlan.detail` on the "F"/``WAL3`` layer.
+DESIGN_SF_DETAIL_RATIOS: tuple[float, ...] = (2.0,)
+
+#: [DESIGN] The four observed S/F offsets expressed in half-thicknesses of the
+#: 200 mm wall (half = 100 mm): -1.2, 2.5, 2.8, 2.0. Kept only as the rescaling
+#: helper it is. Passing this whole tuple as ``detail_ratios`` sends ALL FOUR
+#: lines to the detail role and therefore does NOT reproduce the observed
+#: layer split -- that is why the two constants above exist. Set
+#: ``trim_ratios=()`` and ``detail_ratios=()`` to omit these lines entirely.
+DESIGN_SF_OFFSET_RATIOS: tuple[float, ...] = (
+    *DESIGN_SF_TRIM_RATIOS,
+    *DESIGN_SF_DETAIL_RATIOS,
+)
 
 
 class WallRole(StrEnum):
@@ -168,7 +227,15 @@ def layer_plan(
 
 
 def observed_layer_plan() -> LayerPlan:
-    """Layer plan that reproduces the OBSERVED XiCAD layer assignment."""
+    """[DESIGN] A layer plan that *resembles* the observed XiCAD assignment.
+
+    [OBSERVED] part: layer "C" carries the two faces, "0" the centreline, and
+    three lines on "S" / one on "F" exist at all. [DESIGN] part: the role names
+    ("trim", "detail") and -- importantly -- ``cap`` is placed on "C", so calling
+    this reproduces 4 lines on layer "C" where the dump had exactly 2. Do not
+    read the output of this function as a reproduction of the observation; the
+    observed line offsets are :data:`OBSERVED_XICAD_LINE_OFFSETS_MM`.
+    """
     return LayerPlan(
         face=OBSERVED_XICAD_LAYERS["C"],
         cap=OBSERVED_XICAD_LAYERS["C"],

@@ -78,7 +78,7 @@ recorder/
 ├─ host_dxf.py              machine.Host 프로토콜의 실(DXF) 어댑터. RULE 로 표시됨
 │
 ├─ wall.py       ─┐
-├─ door.py        │  기록기 4종. LINE/ARC 만. INSERT·HATCH 전무.
+├─ door.py        │  4개 기본 기록기. LINE/ARC 중심; HATCH 금지, INSERT 는 block 기능에서 별도 허용.
 ├─ window.py      │  각자 독립 검증 + readback 스냅샷 반환
 ├─ opening.py    ─┘
 │
@@ -108,10 +108,27 @@ recorder/
 | `opening.py` | **6 LINE** (전부) | `TEMP-OPENING-BND`/`-SYM` | `OpeningGeometryError` |
 | `cli.py plan` | 위 벽+문 = **11 엔티티** | 위와 동일 | `CliError` → exit 2 |
 
-공통 규칙: **LINE 과 ARC 조합만 쓴다. 블록 INSERT 도 HATCH 도 없다.**
-이유는 `SPEC.md` §2.4 — 실제 CAD에서 그린 벽 9개 엔티티가 전부 LINE 이었고,
+#### 작성기 5종의 레이어 인자 계약 (`hatch` / `dim` / `text` / `block` / `layers`)
+
+`--layer` 계열은 명령마다 형태가 다르다. `hatch`/`text` 의 `--layer` 와 `block` 의
+`--entity-layer` 는 **필수**다 — `hatch.HATCH_LAYER_STATUS` · `text.TEXT_LAYER_STATUS` ·
+`block.OPENING_BLOCK_LAYER_STATUS` 가 모두 `'UNRESOLVED'` 이기 때문이다.
+**`dim` 만 예외로 `--layer` 가 필수가 아니며 기본값 `DIM` 을 갖는다**
+(`dim.DEFAULT_LAYERS[0] == "DIM"`, `classify_layer('DIM')` 은 `LayerSemantic.DIMENSION`).
+`layers` 는 `--layer` 대신 `--set` 을 쓴다.
+
+`block` 은 "호출자가 이름을 준다" 와 "이름이 8개로 고정된다" 가 둘 다 사실이 아니다.
+거부 기준은 **UNKNOWN 으로 분류되는 이름**이며, `block.CONVENTION_BLOCK_LAYERS`
+(`WAL1`/`WAL2`/`WAL3`/`DOOR`/`DOOR_ELE`/`WIN`/`WINBAR`/`WINELE`) 8개는 목록 검증이 아니라
+**거부 메시지의 권장 목록**이다 (block.py:1313-1331). 실측으로 8개에 없는 `WALL` 과 `A-WALL` 은
+허용된다. 거부되면 `BlockValidationError` → **exit 2**. 자세한 표와 근거는
+`docs/RECORDER-PIPELINE.md` 의 「기록기 5종의 레이어 인자 계약」 절.
+
+공통 규칙: 기록기는 LINE 과 ARC 를 기본 형상으로 쓰며, **HATCH 엔티티는 금지**한다. INSERT 는 `block --mode insert` 에서 허용되지만 기본 동작은 `flatten` 이다. INSERT 모드에서는 `verify` 의 `insert_downstream_visibility` 검사로 하류에서 가려지는 형상을 측정하고, 명시적 승인 없이는 실패한다. HATCH 는 `no_hatch_entity` 검사로 거부된다.
+이유는 `SPEC.md` §2.4 — 실제 CAD에서 그린 벽의 엔티티가 전부 LINE 이었고,
 노멀라이저(`topology.py`)가 INSERT 를 전개하지도 HATCH 를 파싱하지도 않으므로
-블록과 해칭은 토폴로지 세그먼트에 **0개**를 기여한다.
+미전개 INSERT 와 HATCH 는 토폴로지 세그먼트에 **0개**를 기여한다.
+(그 벽의 **개수는 7** 이며 캡 선은 관측에 없다. "9개" 는 [설계] 주장이다 — `wall.py` docstring 참조.)
 
 DXF: 쓰기 **R2018 (AC1032)**, 읽기 하한 **R2000 (AC1015)**.
 
@@ -123,10 +140,13 @@ DXF: 쓰기 **R2018 (AC1032)**, 읽기 하한 **R2000 (AC1015)**.
 **이 라벨이 이 디렉토리에서 가장 값진 정보다.** 요약:
 
 - **관측됨** — 벽 기하(면이 정확히 `±thickness/2`), 레이어 매핑, 문/창 폭(900/1500),
-  DCL 폭 프리셋, 프롬프트 순서, FreeCAD 레이어 보존, 6개 런타임 함정.
-- **설계임(관측 아님)** — 문·창·개구부의 **엔티티 구성 전체**.
+  DCL 폭 프리셋, FreeCAD 레이어 보존, 6개 런타임 함정.
+- **설계임(관측 아님)** — 문·창·개구부의 **엔티티 구성 전체**, 벽의 "9개 엔티티" 주장(실제 덤프는 7),
+  `S`="trim"/`F`="detail" 역할 이름, 문 프롬프트의 `>> `·`:` 장식과 프롬프트 **순서**,
+  `CP949` 인코딩 이름(EUC-KR 과 바이트 동일), 힌지 5550(6000−900/2 파생값).
   원래 명령의 출력이 한 번도 캡처되지 않았다. 문 두께 기본값(`100.0`)도, 창틀 배치도 마찬가지.
-- **미확정** — **개구부의 레이어 소속**, 문 두께 기본값, 창틀 배치, `xiDoor2` 3단계 존재 여부.
+- **미확정** — **개구부의 레이어 소속**, 문 두께 기본값, 창틀 배치, `xiDoor2` 3단계 존재 여부,
+  **문 프롬프트 순서(입력 → 힌지측 점 지정)**.
   개구부 레이어는 `LAYER_MAPPING_RESOLVED = False` 로 남아 있으며
   **`TEMP-` 접두사는 관측 공백을 표시하는 장치**다. 관측되지 않은 레이어는 추론으로 해소할 수 없다.
 
@@ -154,7 +174,14 @@ DXF: 쓰기 **R2018 (AC1032)**, 읽기 하한 **R2000 (AC1015)**.
 
 ## 이 스택이 증명하지 **못하는** 것
 
-- **DWG 미지원** — 전 스택이 ezdxf DXF 전용.
+- **DWG 읽기는 다중 레인으로 이미 동작하고, DWG 쓰기는 없다.**
+  읽기: `native/headless/AllInCad.ACadSharpProbe.exe`(ACadSharp 3.7.1, MIT)가 DWG 를 직접 파싱하거나,
+  ODA File Converter(외부 실행 파일, 무료 뷰어/배치 컨버터)가 DWG→DXF 로 변환한 뒤 ezdxf 가 읽는다.
+  두 레인 모두 기존 `EntitySnapshot` IR 으로 수렴하므로 readback/digest/diff 를 그대로 재사용한다.
+  **기록은 여전히 ezdxf DXF 전용**이며 DWG 쓰기 경로는 이 스택에 없다.
+  실측(2026-09-28, `C:\xicad` 184개 표본, 파싱 실패 0): 레이어명과 좌표가 살아 있고,
+  `xiNorthMark_25.dwg` 는 ACadSharp 직접 93개 = ODA→ezdxf 93개로 교차 일치했다.
+  **남은 공백**: HATCH·ELLIPSE·SPLINE·POINT·SOLID 는 개수는 세어지나 형상이 `geometry: {}` 로 폐기된다.
 - **3D 미지원** — 모든 기록기가 Z=0 평면.
 - **FreeCAD 는 열람 전용** — 사람이 여는 검증용 호스트이지 실행 주체가 아니다. 내보내기 시 레이어 소실.
 - **상태기계가 fake 호스트에서 통과한 것은 실 CAD 동작 증거가 아니다.**

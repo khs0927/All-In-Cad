@@ -139,14 +139,26 @@ class ExternalModificationError(TransactionError):
         self.path = path
         self.expected = expected
         self.found = found
+        #: The failure this raise covered up, when it covered one up. See
+        #: :func:`_with_original_error`.
+        self.original_error: BaseException | None = None
 
 
 class VerificationFailed(TransactionError):
     """The recording was written but did not read back as specified."""
 
-    def __init__(self, message: str, *, report: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        report: Mapping[str, Any] | None = None,
+        original_error: "BaseException | None" = None,
+    ) -> None:
         super().__init__(message)
         self.report = dict(report or {})
+        #: The failure this raise covered up. ``None`` when this *is* the
+        #: original failure. See :func:`_with_original_error`.
+        self.original_error: BaseException | None = original_error
 
 
 class RestoreUnverified(TransactionError):
@@ -155,9 +167,47 @@ class RestoreUnverified(TransactionError):
     The caller must not treat this as a successful rollback.
     """
 
-    def __init__(self, message: str, *, report: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        report: Mapping[str, Any] | None = None,
+        original_error: "BaseException | None" = None,
+    ) -> None:
         super().__init__(message)
         self.report = dict(report or {})
+        self.original_error: BaseException | None = original_error
+
+
+def _with_original_error(
+    raised: TransactionError, original: BaseException | None
+) -> TransactionError:
+    """Attach the error a raise covered up, without changing the raised type.
+
+    Every rollback path here is fail-closed: when the restore cannot be
+    trusted we must raise the restore's own error rather than return, because
+    a caller that sees only the original error would reasonably conclude the
+    failure was harmless. That contract is correct and it is kept.
+
+    What it used to cost is the reason. The original exception stopped being
+    the one propagating, so ``except OriginalType`` no longer matched, and the
+    only surviving copy lived in ``__cause__`` -- readable from a traceback,
+    invisible to a consumer that catches the outer error and reads its fields.
+    A caller asking "why did this fail?" got "someone else owns the bytes" and
+    no way to learn the actual cause was, say, a bad handle. Reporting the
+    wrong reason is this module's chronic failure mode, so the masked error is
+    now carried explicitly.
+
+    ``__cause__`` is still set at the raise site; this field is the reachable
+    copy, not a replacement for the traceback chain.
+    """
+    if original is not None and getattr(raised, "original_error", None) is None:
+        try:
+            raised.original_error = original
+        except AttributeError:  # pragma: no cover - a slotted exception type
+            pass
+    return raised
+
 
 
 # ======================================================================
@@ -733,10 +783,11 @@ class Txn:
                     f"{exc} (additionally: post-failure restore did not complete: "
                     f"{restore_exc})",
                     report=getattr(exc, "report", {}) or {},
+                    original_error=exc,
                 ) from restore_exc
             if isinstance(exc, TransactionError):
                 raise
-            raise VerificationFailed(str(exc)) from exc
+            raise VerificationFailed(str(exc), original_error=exc) from exc
         return result
 
     # -- phase 3: the two endings ---------------------------------------
@@ -826,8 +877,12 @@ class Txn:
                     self.rollback()
                 except TransactionError as restore_exc:
                     # Never swallow the original error: attach and re-raise.
+                    # The restore's own error is what propagates -- a caller
+                    # that saw only the original would read the refusal as
+                    # harmless -- but `original_error` keeps the actual reason
+                    # reachable instead of only inside __cause__.
                     if exc is not None:
-                        raise restore_exc from exc
+                        raise _with_original_error(restore_exc, exc) from exc
                     raise
         return False
 

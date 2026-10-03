@@ -26,7 +26,11 @@ from all_in_cad.readback import diff_snapshots  # noqa: E402
 from all_in_cad.recorder import wall as wall_mod  # noqa: E402
 from all_in_cad.recorder.wall import (  # noqa: E402
     DEFAULT_DOC_LAYER_CENTERS,
+    DESIGN_SF_DETAIL_RATIOS,
+    DESIGN_SF_OFFSET_RATIOS,
+    DESIGN_SF_TRIM_RATIOS,
     OBSERVED_XICAD_LAYERS,
+    OBSERVED_XICAD_LINE_OFFSETS_MM,
     LayerPlan,
     WallGeometry,
     WallRole,
@@ -259,23 +263,107 @@ def test_layer_plan_requires_three_names() -> None:
         layer_plan(("WAL1", "WAL2"))
 
 
-# --- observed detail reproduction (documented estimation) ------------------
+# --- observed dump: the numbers, and the count they actually add up to ----
+#
+# The literal ``trim_ratios=(-1.2, 2.5, 2.8)`` / ``detail_ratios=(2.0,)`` that
+# used to sit in this file asserted three things at once and could only prove
+# one of them: that the Y offsets are right (observed), that three of them go
+# to one layer and one to another (a design choice), and that a wall has "9"
+# entities (never supported by the dump -- the dump totals 7). The three claims
+# are now tested separately, and the failing one is named.
 
 
-def test_observed_detail_profile_reproduces_observed_offsets() -> None:
+def test_observed_dump_line_offsets_are_exactly_as_recorded() -> None:
+    """[OBSERVED] The dump's layer names, line counts and Y offsets."""
+    assert OBSERVED_XICAD_LINE_OFFSETS_MM == {
+        "0": (0.0,),
+        "C": (-100.0, 100.0),
+        "S": (-120.0, 250.0, 280.0),
+        "F": (200.0,),
+    }
+    assert {name: len(y) for name, y in OBSERVED_XICAD_LINE_OFFSETS_MM.items()} == {
+        "0": 1,
+        "C": 2,
+        "S": 3,
+        "F": 1,
+    }
+
+
+def test_observed_dump_totals_seven_entities_and_the_dump_has_no_caps() -> None:
+    """"9 entities" is [DESIGN]: the dump sums to 7 and lists no cap lines."""
+    observed_total = sum(len(y) for y in OBSERVED_XICAD_LINE_OFFSETS_MM.values())
+    assert observed_total == 7  # 1 centreline + 2 faces + 3 S + 1 F
+    assert observed_total != 9
+    # "C" is exactly the two faces: no cap line was observed on any layer.
+    assert OBSERVED_XICAD_LINE_OFFSETS_MM["C"] == (-100.0, 100.0)
+    # ...which is also why the module default does not match the dump.
+    default_wall = make_wall((0.0, 0.0), (12000.0, 0.0), 200.0, include_axis=True)
+    assert len(default_wall.edges()) == 5  # axis + 2 faces + 2 caps [DESIGN]
+
+
+def test_observed_sf_offsets_are_reproduced_by_the_design_ratio_split() -> None:
+    """[OBSERVED] part: the four S/F Y offsets are reproduced exactly.
+
+    [DESIGN] part: which of them becomes trim and which becomes detail, and
+    therefore which layer each lands on.
+    """
     wall = make_wall(
         (0.0, 0.0),
         (12000.0, 0.0),
         200.0,
-        trim_ratios=(-1.2, 2.5, 2.8),
-        detail_ratios=(2.0,),
+        layers=observed_layer_plan(),
+        trim_ratios=DESIGN_SF_TRIM_RATIOS,
+        detail_ratios=DESIGN_SF_DETAIL_RATIOS,
     )
-    ys = sorted(
-        {start.y for role, start, _end in wall.edges() if role is WallRole.TRIM}
+    ys_by_role = {
+        role: sorted({start.y for r, start, _end in wall.edges() if r is role})
+        for role in (WallRole.TRIM, WallRole.DETAIL)
+    }
+    # observed: three lines on "S" at -120/+250/+280, one on "F" at +200
+    assert ys_by_role[WallRole.TRIM] == [-120.0, 250.0, 280.0]
+    assert ys_by_role[WallRole.DETAIL] == [200.0]
+
+
+def test_combined_ratio_tuple_cannot_reproduce_the_observed_layer_split() -> None:
+    """[DESIGN] Why the single ratio tuple is not a reproduction of anything.
+
+    ``DESIGN_SF_OFFSET_RATIOS`` holds the same four numbers, but ``detail_ratios``
+    routes every one of them to the detail role, so passing it whole puts 4
+    lines on "F"/``WAL3`` and none on "S"/``WAL2`` -- the opposite of the dump.
+    This test exists so the constant cannot quietly be relabelled "observed"
+    again without a test failing.
+    """
+    wall = make_wall(
+        (0.0, 0.0),
+        (12000.0, 0.0),
+        200.0,
+        layers=observed_layer_plan(),
+        detail_ratios=DESIGN_SF_OFFSET_RATIOS,
     )
-    assert ys == [-120.0, 250.0, 280.0]
-    detail = [start.y for role, start, _end in wall.edges() if role is WallRole.DETAIL]
-    assert detail[0] == pytest.approx(200.0)
+    assert sorted({start.y for _r, start, _e in wall.edges() if _r is WallRole.DETAIL}) == [
+        -120.0,
+        200.0,
+        250.0,
+        280.0,
+    ]
+    assert not [e for e in wall.edges() if e[0] is WallRole.TRIM]
+
+
+def test_observed_layer_plan_places_caps_on_C_which_the_dump_does_not_show() -> None:
+    """[DESIGN] The known deviation of :func:`observed_layer_plan`, pinned.
+
+    Layer "C" is observed as exactly two lines, but the plan puts the two cap
+    lines there too, so writing with it yields 4 lines on ``WAL1``. Pinned so
+    the deviation stays visible instead of being mistaken for reproduction.
+    """
+    plan = observed_layer_plan()
+    assert plan.cap == plan.face == "WAL1"
+    wall = make_wall(
+        (0.0, 0.0), (12000.0, 0.0), 200.0, layers=plan, trim_ratios=DESIGN_SF_TRIM_RATIOS
+    )
+    wal1_lines = [e for e in wall.edges() if plan.for_role(e[0]) == "WAL1"]
+    assert len(wal1_lines) == 4  # 2 observed faces + 2 unobserved caps
+    assert len(OBSERVED_XICAD_LINE_OFFSETS_MM["C"]) == 2
 
 
 # --- roundtrip: write, save, reload, re-read with ezdxf ---------------------

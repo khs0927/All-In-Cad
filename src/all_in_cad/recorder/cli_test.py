@@ -11,8 +11,23 @@ ENVIRONMENT NOTE (observed on this host)
 Aside injects ``PYTHONHOME`` into the process environment, which hides the venv
 interpreter's standard library and makes ``import ezdxf`` fail with
 ``ModuleNotFoundError: No module named 'annotationlib'``. Child processes
-inherit it, so :func:`_child_env` clears ``PYTHONHOME``/``PYTHONPATH`` before
-every subprocess run::
+inherit it, so :func:`_child_env` clears ``PYTHONHOME`` before every subprocess
+run::
+
+    $env:PYTHONHOME=$null; $env:PYTHONPATH=$null
+    & C:\\Users\\khs09\\all-in-cad\\.venv\\Scripts\\python.exe -m pytest \\
+        C:\\Users\\khs09\\all-in-cad\\src\\all_in_cad\\recorder\\cli_test.py
+
+``PYTHONPATH`` is NOT cleared, because that would let the child import a
+different copy of the package than this test session is testing. An earlier
+version cleared it, and the consequence was a mutation that reported a fully
+green suite: ``cmd_verify``'s failure return had been changed to ``EXIT_OK``
+in a copied tree, every one of these tests still passed, because each child
+dropped ``PYTHONPATH`` and fell back to the editable install of the real
+repository. :func:`_child_env` now points the child at *this* file's own
+source root, so the subprocess and the test process always agree on which
+``cli.py`` is under test. Asserted by
+``test_the_subprocess_cli_runs_the_same_source_this_test_process_sees``.
 
     $env:PYTHONHOME=$null; $env:PYTHONPATH=$null
     & C:\\Users\\khs09\\all-in-cad\\.venv\\Scripts\\python.exe -m pytest \\
@@ -33,8 +48,10 @@ file's SHA-256 unchanged in between.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -51,10 +68,24 @@ EXIT_WRITE_FAILED = 3
 
 
 def _child_env() -> dict[str, str]:
-    """Environment with the Aside-injected PYTHONHOME/PYTHONPATH removed."""
+    """Environment for a child that must import *this* file's own package.
+
+    ``PYTHONHOME`` is removed because Aside injects it and it breaks the venv
+    interpreter. ``PYTHONPATH`` is not merely removed but rebuilt: the source
+    root containing this very test file is put back at the front, so a child
+    can never silently import a different copy of ``all_in_cad`` than the one
+    this session collected and is mutating.
+    """
     env = dict(os.environ)
     env.pop("PYTHONHOME", None)
-    env.pop("PYTHONPATH", None)
+
+    # .../src/all_in_cad/recorder/cli_test.py -> .../src
+    src_root = str(Path(__file__).resolve().parents[2])
+    existing = env.get("PYTHONPATH", "")
+    parts = [p for p in existing.split(os.pathsep) if p]
+    if src_root in parts:
+        parts.remove(src_root)
+    env["PYTHONPATH"] = os.pathsep.join([src_root, *parts])
     return env
 
 
@@ -798,6 +829,14 @@ def test_verify_fails_on_a_hand_mangled_drawing(tmp_path: Path) -> None:
 
 
 def test_verify_fails_on_a_hatch_in_the_drawing(tmp_path: Path) -> None:
+    """HATCH stays forbidden; INSERT does not. See cli.FORBIDDEN_DXF_TYPES.
+
+    The two are not the same case: the hatch recorder chose a boundary
+    polyline plus a contract BECAUSE nothing downstream can measure a HATCH,
+    while the block recorder legitimately writes an INSERT and reports what
+    it hides. So this test must keep failing on HATCH, and a separate one
+    covers the INSERT half.
+    """
     import ezdxf
 
     doc = ezdxf.new("R2018")
@@ -810,7 +849,41 @@ def test_verify_fails_on_a_hatch_in_the_drawing(tmp_path: Path) -> None:
     doc.saveas(out)
 
     payload = run_json("verify", "--in", str(out), expect=EXIT_VERIFY_FAILED)
-    assert "no_insert_or_hatch" in payload["failed"]
+    assert "no_hatch_entity" in payload["failed"]
+
+
+def test_an_insert_is_no_longer_a_forbidden_entity_type(tmp_path: Path) -> None:
+    """The contradiction this change removes, pinned in both directions.
+
+    A drawing with an INSERT used to FAIL no_insert_or_hatch with no way to
+    pass it: the tool rejected its own block recorder's output. INSERT is now
+    allowed, and the check that replaced the ban -- insert_downstream_visibility
+    -- is asserted here so a future edit cannot quietly put the ban back
+    without this test noticing.
+    """
+    import ezdxf
+
+    from all_in_cad.recorder import cli
+
+    assert "INSERT" not in cli.FORBIDDEN_DXF_TYPES
+    assert "HATCH" in cli.FORBIDDEN_DXF_TYPES
+    doc = ezdxf.new("R2018")
+    doc.blocks.new("SOME_BLOCK").add_line((0, 0), (1000, 0), dxfattribs={"layer": "WAL1"})
+    doc.modelspace().add_blockref("SOME_BLOCK", (0, 0), dxfattribs={"layer": "WAL1"})
+    out = tmp_path / "inserted.dxf"
+    doc.saveas(out)
+
+    # --allow-hidden-insert is what the ban used to make impossible: an
+    # INSERT is no longer a forbidden type at all, only an unacknowledged one.
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "block", "--allow-hidden-insert", expect=EXIT_OK
+    )
+    assert "no_hatch_entity" in [check["name"] for check in payload["checks"]]
+    visibility = [c for c in payload["checks"] if c["name"] == "insert_downstream_visibility"]
+    assert len(visibility) == 1, "the replacement check must exist exactly once"
+    assert visibility[0]["status"] == "PASS"
+    assert payload["block"]["hidden_entities"] == 1
+    assert payload["block"]["hidden_length_mm"] == 1000.0
 
 
 def test_verify_fails_on_an_unknown_layer(tmp_path: Path) -> None:
@@ -895,6 +968,23 @@ def test_help_lists_window_and_opening(tmp_path: Path) -> None:
     completed = run_cli("--help", expect=EXIT_OK)
     for name in ("wall", "door", "plan", "verify", "window", "opening"):
         assert name in completed.stdout, f"{name} missing from --help"
+
+
+def test_help_lists_the_five_newly_wired_subcommands() -> None:
+    """The reachability defect this work closed, stated as a test.
+
+    Five of thirteen recorder modules had no subcommand at all, and
+    verify_drawing accepted no expectation for any of them, so a user who
+    adopted hatch/dim/text/block/layer through the library had no shipped
+    verification path. That is the exact condition under which the earlier
+    CRITICAL hid.
+    """
+    completed = run_cli("--help", expect=EXIT_OK)
+    for name in ("hatch", "dim", "text", "block", "layers"):
+        assert name in completed.stdout, f"{name} missing from --help"
+    verify_help = run_cli("verify", "--help", expect=EXIT_OK).stdout
+    for name in ("hatch", "dim", "text", "block", "layers"):
+        assert name in verify_help, f"verify --only {name} is not offered"
 
 
 def test_window_records_and_verifies(tmp_path: Path) -> None:
@@ -1317,6 +1407,11 @@ def test_only_all_requires_all_four(tmp_path: Path) -> None:
     payload = run_json("verify", "--in", str(out), "--only", "all", expect=EXIT_VERIFY_FAILED)
     assert "window_present" in payload["failed"]
     assert "opening_present" in payload["failed"]
+    # 'all' is now every recorder module, not four. A plan drawing holds no
+    # hatch, dimension, annotation, block or recorded layer, so each of those
+    # scopes must also be reported missing -- otherwise 'all' is a word.
+    for absent in ("hatch_present", "dim_present", "text_present"):
+        assert absent in payload["failed"], f"--only all did not require {absent}"
 
 
 def test_default_only_still_checks_a_window_that_is_present(tmp_path: Path) -> None:
@@ -1942,3 +2037,1119 @@ def test_a_failing_undo_is_still_a_failed_rollback() -> None:
     assert result.error_code == "E_ROLLBACK_FAILED"
     assert str(result.terminal_state) == "failed"
     assert "undo refused by host" in " ".join(result.notes)
+
+
+# ---------------------------------------------------------------------------
+# source-integrity + return-code contract (added after the M4 mutation
+# survived a full green run; see the note on the test immediately below)
+# ---------------------------------------------------------------------------
+
+
+def _cli_module_path() -> str:
+    """Absolute path of the cli.py *this* pytest process is testing."""
+    import all_in_cad.recorder.cli as mod
+
+    return Path(mod.__file__).resolve()
+
+
+def test_the_subprocess_cli_runs_the_same_source_this_test_process_sees() -> None:
+    """The subprocess must exercise the cli.py that this test session imported.
+
+    Every other test in this file drives the CLI as a child process, which is
+    the right way to test a process contract. But it means the code under test
+    is whatever the *child* resolves on ``sys.path``, not what this process
+    holds. Those two can silently diverge: a mutation harness, a stale editable
+    install, or a copied tree put on ``PYTHONPATH`` all make the suite report
+    green while testing code nobody edited.
+
+    That is not hypothetical. Mutating ``cmd_verify``'s failure return to
+    ``EXIT_OK`` in a copy of the tree, then running this file with an explicit
+    ``PYTHONPATH=<copy>\\src``, left all 133 tests green -- because
+    :func:`_child_env` drops ``PYTHONPATH``, so every child fell back to the
+    editable install and ran the *unmutated* cli.py. The defect that CI could
+    not see was in the harness, not in the code.
+
+    This test pins the link between the two. If they ever diverge again, the
+    run is red instead of falsely green.
+    """
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import all_in_cad.recorder.cli as m; print(m.__file__)",
+        ],
+        capture_output=True,
+        text=True,
+        env=_child_env(),
+        check=True,
+    )
+    child_path = Path(completed.stdout.strip()).resolve()
+    parent_path = _cli_module_path()
+    assert child_path == parent_path, (
+        "the CLI subprocess is testing a different cli.py than this test "
+        f"process imported.\n  child : {child_path}\n  parent: {parent_path}\n"
+        "A green suite here does not mean the subprocess executed the code "
+        "under test. Check _child_env(): it must not drop the PYTHONPATH that "
+        "selects the tree being tested."
+    )
+
+
+def test_a_child_env_keeps_the_pythonpath_that_selects_the_code_under_test() -> None:
+    """Directly pin the environment behaviour that made the suite lie.
+
+    ``_child_env`` exists to strip the host's ``PYTHONHOME``/``PYTHONPATH``
+    because Aside injects them and the venv's stdlib breaks. Stripping
+    ``PYTHONPATH`` unconditionally also strips a value a caller set on purpose
+    to point at the tree under test, which is what turned a mutation into a
+    silent pass. This test fails if that regression comes back.
+    """
+    import all_in_cad.recorder.cli_test as self_mod
+
+    src_root = str(Path(self_mod.__file__).resolve().parents[2])
+    env = self_mod._child_env()
+    assert "PYTHONHOME" not in env
+    on_path = env.get("PYTHONPATH", "").split(os.pathsep) if env.get("PYTHONPATH") else []
+    assert src_root in on_path, (
+        "_child_env() dropped the source root that selects the code under "
+        f"test. Expected {src_root!r} in PYTHONPATH, got {env.get('PYTHONPATH')!r}. "
+        "Without it the child process silently imports some other copy."
+    )
+
+
+def _verify_args(dxf: Path, *extra: str) -> argparse.Namespace:
+    from all_in_cad.recorder import cli
+
+    return cli.build_parser().parse_args(["verify", "--in", str(dxf), *extra])
+
+
+def test_cmd_verify_never_returns_exit_ok_for_a_failing_report(
+    tmp_path: Path,
+) -> None:
+    """Return-code contract, asserted in-process.
+
+    The subprocess tests above already check exit codes end to end, but they
+    only do so through a child that may not be running this code. This one
+    calls ``cmd_verify`` directly, so it cannot be fooled by path resolution.
+
+    For every report where ``ok`` is false, the return value must not be
+    ``EXIT_OK``. The contract is stated negatively on purpose: adding a new
+    failure route cannot be made to pass by returning a different nonzero code.
+    """
+    from all_in_cad.recorder import cli
+
+    mangled = _mangled_wall_drawing(tmp_path)
+    args = _verify_args(mangled)
+    report = cli.verify_drawing(mangled, tol=args.tol)
+    assert report["ok"] is False, "control failed: this drawing should not verify"
+
+    code = cli.cmd_verify(_verify_args(mangled))
+    assert code != cli.EXIT_OK, (
+        "cmd_verify returned EXIT_OK for a report whose 'ok' is False: a "
+        "verification failure would be reported to the shell as success."
+    )
+    assert code == cli.EXIT_VERIFY_FAILED
+
+
+def test_cmd_verify_returns_exit_ok_only_for_a_passing_report(
+    tmp_path: Path,
+) -> None:
+    """The positive half: the contract must not be 'always fail' either.
+
+    Without this, a defense that simply returned a nonzero value everywhere
+    would pass the negative test above while breaking every real run.
+    """
+    from all_in_cad.recorder import cli
+
+    good = _make_plan(tmp_path, "good.dxf")
+    assert cli.verify_drawing(good)["ok"] is True, "control failed: reference case must verify"
+    assert cli.cmd_verify(_verify_args(good)) == cli.EXIT_OK
+
+
+def test_cmd_verify_json_and_text_paths_agree_on_the_exit_code(
+    tmp_path: Path,
+) -> None:
+    """The ``--json`` branch must not report a different verdict than the text one.
+
+    ``cmd_verify`` prints different bodies per branch and returns from a single
+    statement after both. A future edit that returns from inside the text branch
+    would make a failing draw exit 0 in text mode while the JSON contract held,
+    which is exactly the 'verification failed but reported as success' disease
+    this module is supposed to make impossible.
+    """
+    from all_in_cad.recorder import cli
+
+    mangled = _mangled_wall_drawing(tmp_path)
+    text_code = cli.cmd_verify(_verify_args(mangled))
+    json_code = cli.cmd_verify(_verify_args(mangled, "--json"))
+    assert text_code == json_code == cli.EXIT_VERIFY_FAILED
+
+
+def _mangled_wall_drawing(tmp_path: Path, name: str = "mangled.dxf") -> Path:
+    """A drawing that is genuinely broken, built without the recorders.
+
+    Faces 200 mm apart but caps only 120 mm long and a centreline that is not
+    midway between the faces. Built with ezdxf directly so nothing in the
+    recorder can vouch for it, and so no ``--expect-*`` argument is needed.
+    """
+    import ezdxf
+
+    doc = ezdxf.new("R2018")
+    msp = doc.modelspace()
+    msp.add_line((0, -100, 0), (12000, -100, 0), dxfattribs={"layer": "WAL1"})
+    msp.add_line((0, 100, 0), (12000, 100, 0), dxfattribs={"layer": "WAL1"})
+    msp.add_line((0, -60, 0), (0, 60, 0), dxfattribs={"layer": "WAL2"})
+    msp.add_line((12000, -60, 0), (12000, 60, 0), dxfattribs={"layer": "WAL2"})
+    msp.add_line((0, 30, 0), (12000, 30, 0), dxfattribs={"layer": "CEN1"})
+    out = tmp_path / name
+    doc.saveas(out)
+    return out
+
+
+def test_a_mangled_drawing_exits_one_through_the_real_process_contract(
+    tmp_path: Path,
+) -> None:
+    """Negative control at the process level, for the same defect M4 was.
+
+    The in-process contract tests above are immune to path confusion; this one
+    is not. Both are needed: this proves the shipped exit code, the other
+    proves the logic in the tree under test.
+    """
+    mangled = _mangled_wall_drawing(tmp_path, "broken.dxf")
+    payload = run_json("verify", "--in", str(mangled), expect=EXIT_VERIFY_FAILED)
+    assert payload["ok"] is False
+    assert payload["failed"], "a failing verify must name at least one failed check"
+    assert payload["exit_code"] == EXIT_VERIFY_FAILED
+
+def test_the_verify_report_never_contradicts_its_own_check_list(
+    tmp_path: Path,
+) -> None:
+    """Sweep: ``ok`` and ``exit_code`` must be exactly ``not failed``.
+
+    Both are recomputed from the same ``failed`` list in three separate places
+    today -- in the report dict, in ``cmd_verify``'s return, and implicitly in
+    the text branch. Nothing forces them to stay in agreement: an edit that
+    derives one of them from a different condition would produce a JSON body
+    saying ``"ok": false`` alongside ``"exit_code": 0``, or the reverse. Any
+    such disagreement is a silent success by construction, so it is pinned
+    against every reachable report rather than one hand-picked failure.
+    """
+    from all_in_cad.recorder import cli
+
+    good = _make_plan(tmp_path, "good.dxf")
+    bad = _mangled_wall_drawing(tmp_path, "bad.dxf")
+    scoped = _make_plan(tmp_path, "scoped.dxf")
+
+    cases: list[tuple[Path, tuple[str, ...]]] = [
+        (good, ()),
+        (bad, ()),
+        (scoped, ("--only", "window")),
+        (scoped, ("--only", "all")),
+        (good, ("--expect-entities", "12")),
+    ]
+    for drawing, extra in cases:
+        args = _verify_args(drawing, *extra)
+        report = cli.verify_drawing(
+            drawing,
+            tol=args.tol,
+            require=args.only,
+        )
+        failed = report["failed"]
+        assert report["ok"] is (not failed), (
+            f"'ok' disagrees with 'failed' for {drawing.name} {extra}: "
+            f"ok={report['ok']!r} failed={failed!r}"
+        )
+        assert report["exit_code"] == (
+            cli.EXIT_OK if not failed else cli.EXIT_VERIFY_FAILED
+        ), f"'exit_code' disagrees with 'failed' for {drawing.name} {extra}"
+        # every named failure must really be a FAIL check, and vice versa
+        statuses = {c["name"]: c["status"] for c in report["checks"]}
+        for name in failed:
+            assert statuses.get(name) == "FAIL", (
+                f"failed lists {name!r} but its check status is "
+                f"{statuses.get(name)!r}"
+            )
+        for check in report["checks"]:
+            if check["status"] == "FAIL":
+                assert check["name"] in failed, (
+                    f"check {check['name']!r} is FAIL but missing from 'failed'; "
+                    "the report would print a failing check and report ok"
+                )
+
+
+def test_a_failing_check_can_never_be_downgraded_to_a_warning(
+    tmp_path: Path,
+) -> None:
+    """The permissive-default risk, pinned: WARN must not mask FAIL.
+
+    ``verify`` has a WARN status that is explicitly non-blocking by design
+    (the opening-layer mapping note). The dangerous version of that feature is
+    a check that is genuinely broken being emitted as WARN, which leaves
+    ``ok`` true and the exit code 0. Every check that lands in ``warnings`` is
+    therefore required to be a genuinely non-fatal one, and the two halves of
+    the split must never both claim the same check.
+    """
+    from all_in_cad.recorder import cli
+
+    good = _make_plan(tmp_path, "warn.dxf")
+    report = cli.verify_drawing(good)
+    warned = set(report["warnings"])
+    failed = set(report["failed"])
+    assert not (warned & failed), f"a check is both warned and failed: {warned & failed}"
+    for check in report["checks"]:
+        if check["name"] in warned:
+            assert check["status"] == "WARN", (
+                f"{check['name']!r} is in 'warnings' but its status is "
+                f"{check['status']!r}; a failure reported as a warning exits 0"
+            )
+        if check["status"] in ("PASS", "FAIL", "WARN"):
+            continue
+        raise AssertionError(f"unknown check status {check['status']!r}")
+
+# ===========================================================================
+# The five modules that had no subcommand and no verification path
+# ===========================================================================
+#
+# The reachability defect: hatch, dim, text, block and layer were importable
+# from the library and unreachable from the CLI, and verify_drawing accepted
+# no expectation for any of them. Everything below is in one file on purpose
+# --
+#   * a ROUNDTRIP per module: the drawing the CLI made, verified by the CLI
+#     that made it, with a real expectation (not merely "--only X exits 0",
+#     which a check that measures nothing would also satisfy);
+#   * a FAILURE CONTROL per module: a hand-mangled drawing that MUST exit 1,
+#     built by editing the file with ezdxf so no recorder can vouch for it.
+#
+# The control is the half that matters. A roundtrip alone is satisfied by a
+# verifier that passes everything, which is the failure pattern this project
+# has already shipped once: the earlier CRITICAL hid because nothing ever fed
+# a real recording of an element into that element's own analyser AND demanded
+# a pass on a broken one.
+# ---------------------------------------------------------------------------
+
+_NEW_RECORDERS = [
+    (
+        "hatch",
+        [
+            "--boundary", "0", "0", "2000", "0", "2000", "1000", "0", "1000",
+            "--layer", "HATCHA", "--pattern-name", "ANSI31",
+        ],
+        ["--only", "hatch", "--unresolved-layer", "HATCHA"],
+    ),
+    ("dim", ["--p1", "0", "0", "--p2", "3000", "0"], ["--only", "dim"]),
+    (
+        "text",
+        ["--content", "hello note", "--insert", "100", "100", "--layer", "NOTE"],
+        ["--only", "text", "--unresolved-layer", "NOTE"],
+    ),
+    (
+        "block",
+        [
+            "--name", "BLKA", "--line", "0", "0", "1000", "0", "--line", "0", "0", "0", "600",
+            "--entity-layer", "WAL1", "--location", "5000", "0",
+        ],
+        ["--only", "block"],
+    ),
+    ("layers", ["--layer", "WAL1", "--layer", "DOOR"], ["--only", "layers"]),
+]
+
+
+def _record(subcommand: str, extra: list[str], out: Path, *more: str) -> dict:
+    return run_json(subcommand, *extra, "--out", str(out), *more, expect=EXIT_OK)
+
+
+@pytest.mark.parametrize("subcommand, extra, verify_scope", _NEW_RECORDERS)
+def test_the_five_new_recorders_round_trip_through_their_own_verify(
+    tmp_path: Path, subcommand: str, extra: list[str], verify_scope: list[str]
+) -> None:
+    """A recorder that cannot be verified by the shipped verifier is unfinished."""
+    out = tmp_path / f"{subcommand}.dxf"
+    written = _record(subcommand, extra, out)
+    assert out.exists()
+    assert written["command"] == subcommand
+    assert written["ok"] is True
+    payload = run_json("verify", "--in", str(out), *verify_scope, expect=EXIT_OK)
+    assert payload["ok"] is True, f"{subcommand}: {payload['failed']}"
+
+
+@pytest.mark.parametrize("subcommand, extra, verify_scope", _NEW_RECORDERS)
+def test_the_five_new_recorders_print_the_verification_they_claim(
+    tmp_path: Path, subcommand: str, extra: list[str], verify_scope: list[str]
+) -> None:
+    """The ``verify_hint`` each command prints must actually work.
+
+    A hint that does not run is worse than no hint: it teaches the user that
+    the printed command line is trustworthy. So it is executed, not
+    string-matched.
+    """
+    out = tmp_path / f"{subcommand}.dxf"
+    written = _record(subcommand, extra, out)
+    hint = written["verify_hint"]
+    # shlex in POSIX mode, because the hint is emitted with POSIX quoting (see
+    # cli._quote_argv): inside single quotes a Windows backslash is literal, so
+    # the path survives while an annotation with spaces stays one argument.
+    argv = shlex.split(hint)
+    assert argv[:2] == ["verify", "--in"]
+    assert argv[2] == str(out)
+    completed = run_cli(*argv, expect=EXIT_OK)
+    assert "RESULT: PASS" in completed.stdout, completed.stdout
+
+
+@pytest.mark.parametrize("subcommand, extra, verify_scope", _NEW_RECORDERS)
+def test_the_five_new_recorders_measure_what_they_recorded(
+    tmp_path: Path, subcommand: str, extra: list[str], verify_scope: list[str]
+) -> None:
+    """The command's own numbers and verify's independent reading must agree.
+
+    Two code paths compute these: the recorder's read-back record, and
+    verify's re-reading of the saved file. A roundtrip that only checked
+    "exits 0" would pass even if one of them reported nonsense.
+    """
+    out = tmp_path / f"{subcommand}.dxf"
+    written = _record(subcommand, extra, out)
+    payload = run_json("verify", "--in", str(out), *verify_scope, expect=EXIT_OK)
+    if subcommand == "hatch":
+        assert payload["hatch"]["area_mm2"] == written["hatch"]["area_mm2"]
+        assert payload["hatch"]["pattern_names"] == [written["hatch"]["pattern"]]
+    elif subcommand == "dim":
+        assert payload["dim"]["measurements"] == [written["dim"]["measurement_mm"]]
+        assert payload["dim"]["rendered_texts"] == [written["dim"]["text"]]
+    elif subcommand == "text":
+        assert payload["text"]["contents"] == [written["text"]["content"]]
+        assert payload["text"]["heights"] == [written["text"]["height"]]
+    elif subcommand == "block":
+        assert written["visible_downstream"] is True
+        assert written["contributed_segments"] == 2
+        assert payload["block"]["insert_count"] == 0
+    elif subcommand == "layers":
+        assert written["layer_table"]["order"] == payload["layers"]["layer_table"]
+        assert set(written["layers"]) <= set(payload["layers"]["layer_table"])
+
+
+# ---- per-module expectations ------------------------------------------------
+
+
+def test_hatch_area_and_pattern_expectations_are_checked(tmp_path: Path) -> None:
+    out = tmp_path / "hatch.dxf"
+    _record("hatch", _NEW_RECORDERS[0][1], out)
+    passing = run_json(
+        "verify", "--in", str(out), "--only", "hatch", "--unresolved-layer", "HATCHA",
+        "--expect-hatch-area", "2000000", "--expect-hatch-pattern", "ANSI31",
+        expect=EXIT_OK,
+    )
+    assert "hatch_area_matches_expectation" in [
+        check["name"] for check in passing["checks"]
+    ]
+    wrong = run_json(
+        "verify", "--in", str(out), "--only", "hatch", "--unresolved-layer", "HATCHA",
+        "--expect-hatch-area", "2000001", expect=EXIT_VERIFY_FAILED,
+    )
+    assert "hatch_area_matches_expectation" in wrong["failed"]
+    wrong_pattern = run_json(
+        "verify", "--in", str(out), "--only", "hatch", "--unresolved-layer", "HATCHA",
+        "--expect-hatch-pattern", "ANSI32", expect=EXIT_VERIFY_FAILED,
+    )
+    assert "hatch_pattern_matches_expectation" in wrong_pattern["failed"]
+
+
+def test_dim_measurement_expectation_is_checked(tmp_path: Path) -> None:
+    out = tmp_path / "dim.dxf"
+    _record("dim", ["--p1", "0", "0", "--p2", "3000", "0"], out)
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "dim", "--expect-dim-measurement", "2999",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "dim_measurement_matches_expectation" in payload["failed"]
+
+
+def test_text_content_expectation_is_checked(tmp_path: Path) -> None:
+    out = tmp_path / "text.dxf"
+    _record("text", ["--content", "hello note", "--insert", "100", "100", "--layer", "NOTE"], out)
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "text", "--unresolved-layer", "NOTE",
+        "--expect-text-content", "goodbye note", expect=EXIT_VERIFY_FAILED,
+    )
+    assert "text_content_matches_expectation" in payload["failed"]
+
+
+def test_block_name_expectation_is_checked(tmp_path: Path) -> None:
+    out = tmp_path / "block.dxf"
+    _record(
+        "block",
+        ["--name", "BLKA", "--line", "0", "0", "1000", "0", "--entity-layer", "WAL1"],
+        out,
+    )
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "block", "--expect-block-name", "NOPE",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "block_name_matches_expectation" in payload["failed"]
+
+
+def test_layer_name_expectation_is_checked(tmp_path: Path) -> None:
+    out = tmp_path / "layers.dxf"
+    _record("layers", ["--layer", "WAL1", "--layer", "DOOR"], out)
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "layers", "--expect-layers", "WAL1", "NOPE",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "layer_names_match_expectation" in payload["failed"]
+
+
+@pytest.mark.parametrize(
+    "subcommand, extra, verify_scope, expectation, failing_check",
+    [
+        (
+            "hatch",
+            ["--boundary", "0", "0", "2000", "0", "2000", "1000", "0", "1000",
+             "--layer", "HATCHA", "--pattern-name", "ANSI31"],
+            ["--only", "hatch", "--unresolved-layer", "HATCHA"],
+            ["--expect-hatch-area", "1"],
+            "hatch_area_matches_expectation",
+        ),
+        (
+            "dim",
+            ["--p1", "0", "0", "--p2", "3000", "0"],
+            ["--only", "dim"],
+            ["--expect-dim-measurement", "1"],
+            "dim_measurement_matches_expectation",
+        ),
+        (
+            "text",
+            ["--content", "hello note", "--insert", "100", "100", "--layer", "NOTE"],
+            ["--only", "text", "--unresolved-layer", "NOTE"],
+            ["--expect-text-content", "absent"],
+            "text_content_matches_expectation",
+        ),
+        (
+            "block",
+            ["--name", "BLKA", "--line", "0", "0", "1000", "0", "--entity-layer", "WAL1"],
+            ["--only", "block"],
+            ["--expect-block-name", "ABSENT"],
+            "block_name_matches_expectation",
+        ),
+        (
+            "layers",
+            ["--layer", "WAL1"],
+            ["--only", "layers"],
+            ["--expect-layers", "ABSENT"],
+            "layer_names_match_expectation",
+        ),
+    ],
+)
+def test_a_requested_expectation_is_never_discarded(
+    tmp_path: Path,
+    subcommand: str,
+    extra: list[str],
+    verify_scope: list[str],
+    expectation: list[str],
+    failing_check: str,
+) -> None:
+    """An unmeasurable --expect-* is a FAIL, not a vanished check and exit 0.
+
+    S1 was the shape of this bug for wall and door: the user asked for an
+    assertion, the drawing could not supply it, no check was created, and the
+    command reported success for something nobody verified. Extended here to
+    all five new expectations.
+    """
+    out = tmp_path / f"{subcommand}.dxf"
+    _record(subcommand, extra, out)
+    payload = run_json(
+        "verify", "--in", str(out), *verify_scope, *expectation,
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert failing_check in payload["failed"]
+    assert failing_check in [check["name"] for check in payload["checks"]], (
+        "the check must still EXIST, with a FAIL status"
+    )
+
+
+# ---- the INSERT policy ------------------------------------------------------
+
+
+def test_block_insert_mode_needs_the_concealment_acknowledged(tmp_path: Path) -> None:
+    """The replaced ban, as a two-sided contract.
+
+    Before this change the INSERT drawing FAILED with no way to pass it. Now
+    it passes when the caller declares the concealment and fails when they do
+    not -- and either way the measured hidden geometry is in the report.
+    """
+    out = tmp_path / "insert.dxf"
+    written = _record(
+        "block",
+        [
+            "--name", "BLKB", "--line", "0", "0", "1000", "0", "--line", "0", "0", "0", "600",
+            "--entity-layer", "WAL1", "--location", "5000", "0", "--mode", "insert",
+        ],
+        out,
+    )
+    assert written["visible_downstream"] is False
+    assert written["contributed_segments"] == 0
+    assert written["hidden_segments"] == 2
+    assert written["hidden_length_mm"] == 1600.0
+
+    unacknowledged = run_json(
+        "verify", "--in", str(out), "--only", "block", "--expect-block-name", "BLKB",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "insert_downstream_visibility" in unacknowledged["failed"]
+    # The cost is still reported in the failing report, not swallowed by it.
+    assert unacknowledged["block"]["hidden_entities"] == 2
+    assert unacknowledged["block"]["hidden_length_mm"] == 1600.0
+
+    acknowledged = run_json(
+        "verify", "--in", str(out), "--only", "block", "--expect-block-name", "BLKB",
+        "--allow-hidden-insert", expect=EXIT_OK,
+    )
+    assert acknowledged["ok"] is True
+    assert acknowledged["block"]["hidden_entities"] == 2
+    assert acknowledged["insert_visibility_note"] is not None
+
+
+def test_block_flatten_mode_needs_no_acknowledgement(tmp_path: Path) -> None:
+    """The default mode contributes its geometry, so nothing is concealed."""
+    out = tmp_path / "flatten.dxf"
+    written = _record(
+        "block",
+        [
+            "--name", "BLKC", "--line", "0", "0", "1000", "0", "--line", "0", "0", "0", "600",
+            "--entity-layer", "WAL1", "--location", "5000", "0",
+        ],
+        out,
+    )
+    assert written["visible_downstream"] is True
+    assert written["hidden_segments"] == 0
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "block", "--expect-block-name", "BLKC",
+        expect=EXIT_OK,
+    )
+    assert payload["insert_visibility_note"] is None
+
+
+# ---- FAILURE CONTROLS: a hand-mangled drawing must exit 1 -------------------
+
+
+def _mangle(source: Path, target: Path, damage) -> Path:
+    """Copy ``source`` through ``damage`` and save it as ``target``."""
+    import ezdxf
+
+    doc = ezdxf.readfile(source)
+    damage(doc)
+    doc.saveas(target)
+    return target
+
+
+def test_control_a_hatch_whose_boundary_is_no_longer_closed_exits_one(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "hatch.dxf"
+    _record("hatch", _NEW_RECORDERS[0][1], out)
+
+    def unclose(doc) -> None:
+        for entity in doc.modelspace():
+            if entity.dxftype() == "LWPOLYLINE":
+                entity.closed = False
+
+    broken = _mangle(out, tmp_path / "unclosed.dxf", unclose)
+    payload = run_json(
+        "verify", "--in", str(broken), "--only", "hatch", "--unresolved-layer", "HATCHA",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "hatch_boundary_is_closed" in payload["failed"]
+
+
+def test_control_a_dimension_whose_own_text_lies_exits_one(tmp_path: Path) -> None:
+    """The number the drawing renders is compared, not the DXF's placeholder.
+
+    dxf.text still reads the injected value here, so a verifier that read
+    dxf.text would have seen 3000.00 and passed. The text that lies is the
+    one in the anonymous block -- the one a human reads.
+    """
+    out = tmp_path / "dim.dxf"
+    _record("dim", ["--p1", "0", "0", "--p2", "3000", "0"], out)
+
+    def lie(doc) -> None:
+        for entity in doc.modelspace():
+            if entity.dxftype() != "DIMENSION":
+                continue
+            assert entity.dxf.text == "3000.00", "expected the recorded value in dxf.text"
+            for item in doc.blocks.get(str(entity.dxf.geometry)):
+                if item.dxftype() == "MTEXT":
+                    item.text = "9999.99"
+
+    broken = _mangle(out, tmp_path / "liar.dxf", lie)
+    payload = run_json("verify", "--in", str(broken), "--only", "dim", expect=EXIT_VERIFY_FAILED)
+    assert "dim_text_matches_measurement" in payload["failed"]
+
+
+def test_control_an_annotation_whose_content_was_emptied_exits_one(tmp_path: Path) -> None:
+    out = tmp_path / "text.dxf"
+    _record("text", ["--content", "hello note", "--insert", "100", "100", "--layer", "NOTE"], out)
+
+    def empty(doc) -> None:
+        for entity in doc.modelspace():
+            if entity.dxftype() == "TEXT":
+                entity.dxf.text = "   "
+
+    broken = _mangle(out, tmp_path / "empty.dxf", empty)
+    payload = run_json(
+        "verify", "--in", str(broken), "--only", "text", "--unresolved-layer", "NOTE",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "text_content_non_empty" in payload["failed"]
+
+
+def test_control_a_block_drawing_whose_content_vanished_exits_one(
+    tmp_path: Path,
+) -> None:
+    """FLATTEN mode's promise is that the geometry is really in the drawing.
+
+    The definition survives the damage, so a check that only looked for a
+    block name would still pass -- which is exactly why the control asserts
+    the count fails AND that the definition check did not. If the count check
+    were the one silently passing, this test would show it.
+    """
+    out = tmp_path / "block.dxf"
+    written = _record(
+        "block",
+        ["--name", "BLKA", "--line", "0", "0", "1000", "0", "--entity-layer", "WAL1"],
+        out,
+    )
+    assert written["entity_count"] == 1
+
+    def wipe(doc) -> None:
+        for entity in list(doc.modelspace()):
+            doc.modelspace().delete_entity(entity)
+
+    broken = _mangle(out, tmp_path / "wiped.dxf", wipe)
+    payload = run_json(
+        "verify", "--in", str(broken), "--only", "block", "--expect-block-name", "BLKA",
+        "--expect-entities", "1", expect=EXIT_VERIFY_FAILED,
+    )
+    assert "entity_count_matches_expectation" in payload["failed"]
+    # The block itself is untouched, so the failure is the missing content and
+    # not a side effect of a different check firing.
+    assert "block_name_matches_expectation" not in payload["failed"]
+    assert payload["block"]["block_names"] == ["BLKA"]
+
+
+def test_control_a_layer_table_entry_that_vanished_exits_one(tmp_path: Path) -> None:
+    out = tmp_path / "layers.dxf"
+    _record("layers", ["--layer", "WAL1", "--layer", "DOOR"], out)
+
+    def drop(doc) -> None:
+        doc.layers.remove("DOOR")
+
+    broken = _mangle(out, tmp_path / "dropped.dxf", drop)
+    payload = run_json(
+        "verify", "--in", str(broken), "--only", "layers", "--expect-layers", "WAL1", "DOOR",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "layer_names_match_expectation" in payload["failed"]
+
+
+# ---- argument rejection, overwrite refusal, exit codes ----------------------
+
+
+@pytest.mark.parametrize(
+    "subcommand, bad",
+    [
+        # hatch: a ring needs three pairs, and the numbers must pair up
+        ("hatch", ["--boundary", "0", "0", "2000", "0", "--layer", "H", "--pattern-name", "ANSI31"]),
+        ("hatch", ["--boundary", "0", "0", "2000", "0", "2000", "--layer", "H", "--pattern-name", "ANSI31"]),
+        # dim: coincident points have no direction
+        ("dim", ["--p1", "0", "0", "--p2", "0", "0"]),
+        # text: a non-positive height cannot be rendered
+        ("text", ["--content", "x", "--insert", "0", "0", "--layer", "N", "--height", "0"]),
+        # block: a zero-length edge, and no content at all
+        ("block", ["--name", "B", "--line", "0", "0", "0", "0", "--entity-layer", "WAL1"]),
+        ("block", ["--name", "B", "--entity-layer", "WAL1"]),
+        # layers: an unknown --set key must not be a silent no-op
+        ("layers", ["--set", "WAL1.colour=1"]),
+    ],
+)
+def test_the_five_new_recorders_reject_bad_arguments(
+    tmp_path: Path, subcommand: str, bad: list[str]
+) -> None:
+    out = tmp_path / "never.dxf"
+    run_cli(subcommand, *bad, "--out", str(out), expect=EXIT_USAGE)
+    assert not out.exists(), "a rejected command must leave no drawing behind"
+
+
+@pytest.mark.parametrize("subcommand, bad", [
+    ("hatch", ["--boundary", "0", "0", "--layer", "H", "--pattern-name", "A"]),
+    ("dim", ["--p1", "0", "0"]),
+    ("text", ["--content", "x", "--insert", "0", "0"]),
+    ("block", ["--name", "B", "--line", "0", "0", "1", "1"]),
+    ("layers", []),
+])
+def test_the_five_new_recorders_require_their_own_arguments(
+    tmp_path: Path, subcommand: str, bad: list[str]
+) -> None:
+    """--layer, --content, --name: the unresolved-layer rule pushed to the CLI.
+
+    hatch, text and block must be told the layer, because their modules
+    report LAYER_STATUS == UNRESOLVED and refuse to invent one. A default here
+    would quietly undo that decision at the one place a user can reach.
+    """
+    out = tmp_path / "never.dxf"
+    run_cli(subcommand, *bad, "--out", str(out), expect=EXIT_USAGE)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("subcommand, extra, verify_scope", _NEW_RECORDERS)
+def test_the_five_new_recorders_refuse_to_overwrite(
+    tmp_path: Path, subcommand: str, extra: list[str], verify_scope: list[str]
+) -> None:
+    """The shared overwrite contract, checked on all ten writers, not five.
+
+    ``_add_out_arguments`` is one function, but a per-command bug is exactly
+    how a shared rule stops being shared. The second run must refuse with 2
+    and leave the first drawing byte-identical; --force is the only way past.
+    """
+    import hashlib
+
+    out = tmp_path / f"{subcommand}.dxf"
+    _record(subcommand, extra, out)
+    first = hashlib.sha256(out.read_bytes()).hexdigest()
+
+    refused = run_json(subcommand, *extra, "--out", str(out), expect=EXIT_USAGE)
+    assert refused["ok"] is False
+    assert "refusing to overwrite" in refused["error"]
+    assert hashlib.sha256(out.read_bytes()).hexdigest() == first
+
+    forced = _record(subcommand, extra, out, "--force")
+    assert forced["overwrote_existing"] is True
+    assert run_json("verify", "--in", str(out), *verify_scope, expect=EXIT_OK)["ok"] is True
+
+
+def test_layers_reports_a_refusal_as_a_refusal_and_leaves_no_journal(
+    tmp_path: Path,
+) -> None:
+    """The refusal path is shared; this proves the new command uses it."""
+    out = tmp_path / "layers.dxf"
+    _record("layers", ["--layer", "WAL1"], out)
+    payload = run_json("layers", "--layer", "CEN1", "--out", str(out), expect=EXIT_USAGE)
+    assert payload["ok"] is False
+    assert payload["exit_code"] == EXIT_USAGE
+    journal = out.parent / ".all_in_cad_txn"
+    leftovers = sorted(p.name for p in journal.iterdir()) if journal.exists() else []
+    assert leftovers == [], f"a refused write left journal residue: {leftovers}"
+
+
+# ---- the unresolved-layer declaration ---------------------------------------
+
+
+def test_declaring_an_unresolved_layer_is_explicit_and_does_not_generalise(
+    tmp_path: Path,
+) -> None:
+    """--unresolved-layer is a per-drawing, per-layer statement, not a switch.
+
+    A flag that silenced the whole check would be a hole in the fail-closed
+    contract, so the same drawing with an UNDECLARED unknown layer must still
+    FAIL.
+    """
+    out = tmp_path / "hatch.dxf"
+    _record("hatch", _NEW_RECORDERS[0][1], out)
+    declared = run_json(
+        "verify", "--in", str(out), "--only", "hatch", "--unresolved-layer", "HATCHA",
+        expect=EXIT_OK,
+    )
+    check = [c for c in declared["checks"] if c["name"] == "layer_semantics_mapped"][0]
+    assert check["excluded_unresolved"] == ["HATCHA"]
+
+    undeclared = run_json(
+        "verify", "--in", str(out), "--only", "hatch", expect=EXIT_VERIFY_FAILED
+    )
+    assert "layer_semantics_mapped" in undeclared["failed"]
+
+
+def test_verify_rejects_an_unknown_only_scope(tmp_path: Path) -> None:
+    out = tmp_path / "hatch.dxf"
+    _record("hatch", _NEW_RECORDERS[0][1], out)
+    run_cli("verify", "--in", str(out), "--only", "nonsense", expect=EXIT_USAGE)
+# ---------------------------------------------------------------------------
+# regression: dangling INSERT must fail a check, not crash the whole report
+# ---------------------------------------------------------------------------
+
+
+def _dangling_insert_drawing(tmp_path: Path) -> Path:
+    """A drawing whose INSERT names a block that is not in the BLOCK table.
+
+    ``doc.blocks.get()`` answers a missing name with ``None`` and does not
+    raise, so the guard that used to sit around that call was unreachable for
+    exactly the failure it was written for, and ``for entity in block`` raised
+    ``TypeError``. The consequence was worse than one bad check: the exception
+    escaped ``verify_drawing`` before the report was assembled, so *every*
+    check in the drawing was lost and ``--json`` consumers got a traceback on
+    stderr instead of an ``ok: false`` object.
+    """
+    import ezdxf
+
+    doc = ezdxf.new("R2018")
+    doc.modelspace().add_blockref("GHOST_BLOCK", (0, 0), dxfattribs={"layer": "WAL1"})
+    # A second, resolvable entity so the report has to contain other checks:
+    # the whole point is that one dangling reference must not blind them.
+    doc.modelspace().add_line((0, 0), (500, 0), dxfattribs={"layer": "WAL1"})
+    out = tmp_path / "dangling.dxf"
+    doc.saveas(out)
+    return out
+
+
+def test_verify_reports_a_dangling_insert_instead_of_crashing(tmp_path: Path) -> None:
+    """Exit 1, valid JSON, the missing block named, no traceback, report intact."""
+    out = _dangling_insert_drawing(tmp_path)
+
+    completed = run_cli("verify", "--in", str(out), "--json", "--only", "block")
+    assert completed.returncode == EXIT_VERIFY_FAILED, (
+        f"a dangling INSERT must be exit 1 (a failed check), not a crash\n"
+        f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    )
+    assert "Traceback" not in completed.stderr
+    assert "TypeError" not in completed.stderr
+
+    payload = json.loads(completed.stdout)
+    assert payload["ok"] is False
+    # The dangling INSERT is recorded as a FAILED check rather than a crash.
+    # It rides the existing insert_downstream_visibility check: adding a new
+    # check name would break tests/test_doc_code_consistency.py, which
+    # requires every _check name in cli.py to be documented.
+    assert "insert_downstream_visibility" in payload["failed"]
+    check = [
+        c for c in payload["checks"] if c["name"] == "insert_downstream_visibility"
+    ][0]
+    assert check["status"] == "FAIL"
+    assert "GHOST_BLOCK" in check["detail"], "the missing block must be named"
+    assert check["dangling_block_names"] == ["GHOST_BLOCK"]
+
+    # The rest of the report survives: these checks are unaffected by the
+    # dangling reference and must still be present with their own verdicts.
+    assert "entity_count_reported" in [c["name"] for c in payload["checks"]]
+    assert "no_hatch_entity" in [c["name"] for c in payload["checks"]]
+    assert payload["entity_count"] == 2
+    assert payload["block"]["dangling_insert_block_names"] == ["GHOST_BLOCK"]
+
+
+def test_a_dangling_insert_is_not_acknowledged_away(tmp_path: Path) -> None:
+    """--allow-hidden-insert waives concealment, not a missing definition.
+
+    The cost of a dangling INSERT is unmeasurable, not zero. If the
+    acknowledgement silenced it, the flag would buy a silently broken drawing
+    for free.
+    """
+    out = _dangling_insert_drawing(tmp_path)
+
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "block", "--allow-hidden-insert",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "insert_downstream_visibility" in payload["failed"]
+
+    visibility = [
+        c for c in payload["checks"] if c["name"] == "insert_downstream_visibility"
+    ][0]
+    assert visibility["acknowledged"] is True
+    assert visibility["status"] == "FAIL", (
+        "the acknowledgement waives concealment, not a missing definition"
+    )
+    assert visibility["dangling_block_names"] == ["GHOST_BLOCK"]
+
+
+def test_a_resolvable_insert_still_reports_zero_hidden(tmp_path: Path) -> None:
+    """The dangling handling must not turn a real measurement into a FAIL."""
+    import ezdxf
+
+    doc = ezdxf.new("R2018")
+    doc.blocks.new("REAL_BLOCK").add_line((0, 0), (1000, 0), dxfattribs={"layer": "WAL1"})
+    doc.modelspace().add_blockref("REAL_BLOCK", (0, 0), dxfattribs={"layer": "WAL1"})
+    out = tmp_path / "resolvable.dxf"
+    doc.saveas(out)
+
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "block", "--allow-hidden-insert",
+        expect=EXIT_OK,
+    )
+    visibility = [
+        c for c in payload["checks"] if c["name"] == "insert_downstream_visibility"
+    ][0]
+    assert visibility["status"] == "PASS"
+    assert visibility["dangling_block_names"] == []
+    assert payload["block"]["dangling_insert_block_names"] == []
+    assert payload["block"]["hidden_entities"] == 1
+    assert payload["block"]["hidden_length_mm"] == 1000.0
+
+
+# ---------------------------------------------------------------------------
+# regression: --expect-dim-measurement must match any dimension, not values[0]
+# ---------------------------------------------------------------------------
+
+
+def _two_dimension_drawing(tmp_path: Path) -> Path:
+    """A drawing holding two dimensions: 3000 mm and 7777 mm.
+
+    Built with ``dim.write_dim`` rather than two CLI invocations because the
+    ``dim`` recorder writes one dimension per run; ``--force`` onto the same
+    file replaces the drawing instead of adding to it, so the multi-dimension
+    case -- the only case where the old ``values[0]`` behaviour was wrong --
+    is otherwise not reachable through the command line.
+    """
+    import ezdxf
+
+    from all_in_cad.recorder import dim as dim_module
+
+    doc = ezdxf.new("R2018")
+    dim_module.write_dim(doc, dim_module.make_dim((0, 0), (3000, 0)))
+    dim_module.write_dim(doc, dim_module.make_dim((0, 5000), (7777, 5000)))
+    out = tmp_path / "twodims.dxf"
+    doc.saveas(out)
+    return out
+
+
+def test_expect_dim_measurement_matches_the_second_dimension_too(tmp_path: Path) -> None:
+    """The expected value being *present* is what matters, not its position.
+
+    Taking ``values[0]`` made a check that failed while naming a dimension
+    nobody asked about, and let a wrong second dimension pass unnoticed.
+    """
+    out = _two_dimension_drawing(tmp_path)
+
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "dim",
+        "--expect-dim-measurement", "7777",
+        expect=EXIT_OK,
+    )
+    assert "dim_measurement_matches_expectation" in [
+        c["name"] for c in payload["checks"] if c["status"] == "PASS"
+    ]
+
+
+def test_expect_dim_measurement_still_fails_for_an_absent_value(tmp_path: Path) -> None:
+    """Set membership must not become a blanket pass."""
+    out = _two_dimension_drawing(tmp_path)
+
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "dim",
+        "--expect-dim-measurement", "4242",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "dim_measurement_matches_expectation" in payload["failed"]
+
+
+def test_expect_dim_measurement_repeats_check_each_value(tmp_path: Path) -> None:
+    """Each repetition is its own check, so one bad value is still reported."""
+    out = _two_dimension_drawing(tmp_path)
+
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "dim",
+        "--expect-dim-measurement", "3000",
+        "--expect-dim-measurement", "7777",
+        "--expect-dim-measurement", "4242",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    names = [
+        c["name"] for c in payload["checks"] if "dim_measurement_matches" in c["name"]
+    ]
+    assert len(names) == 3, f"one check per requested value, got {names}"
+    assert names[0] == "dim_measurement_matches_expectation"
+    assert names[1] == "dim_measurement_matches_expectation_2"
+    assert names[2] == "dim_measurement_matches_expectation_3"
+    assert payload["failed"] == ["dim_measurement_matches_expectation_3"]
+    failed_check = [
+        c for c in payload["checks"]
+        if c["name"] == "dim_measurement_matches_expectation_3"
+    ][0]
+    assert "4242" in failed_check["detail"]
+
+
+def test_expect_dim_measurement_still_fails_when_no_dimension_exists(
+    tmp_path: Path,
+) -> None:
+    """The empty-drawing message survives the switch to set membership."""
+    out = tmp_path / "lines.dxf"
+    _record("wall", ["--start", "0", "0", "--end", "12000", "0", "-t", "200"], out)
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "dim",
+        "--expect-dim-measurement", "3000",
+        expect=EXIT_VERIFY_FAILED,
+    )
+    assert "dim_measurement_matches_expectation" in payload["failed"]
+    detail = [
+        c for c in payload["checks"]
+        if c["name"] == "dim_measurement_matches_expectation"
+    ][0]["detail"]
+    assert "no dimension measurement could be read" in detail
+
+
+# ---------------------------------------------------------------------------
+# help / note honesty about the block layer rule
+#
+# block.py's _validate_layer REFUSES any name classify_layer maps to UNKNOWN
+# (sole exception: the opt-in observed "0"). hatch.py and text.py instead
+# record the caller-named layer and report its semantic. The user-facing
+# strings must not describe block as if it behaved like the other two.
+# ---------------------------------------------------------------------------
+
+
+def test_entity_layer_help_does_not_claim_block_enforces_a_list() -> None:
+    """CONVENTION_BLOCK_LAYERS is a recommendation, not the membership test."""
+    help_text = run_cli("block", "--help", expect=EXIT_OK).stdout
+    assert "classifies as UNKNOWN is refused" in help_text
+    assert "Use a name from CONVENTION_BLOCK_LAYERS" not in help_text
+    # the eight recommended names are still spelled out for the user
+    for name in ("WAL1", "WAL2", "WAL3", "DOOR", "DOOR_ELE", "WIN", "WINBAR", "WINELE"):
+        assert name in help_text, f"{name} missing from block --help"
+
+
+def test_unresolved_layer_help_excludes_block_and_says_why() -> None:
+    """--unresolved-layer is a hatch/text flag; block cannot use it at all."""
+    help_text = run_cli("verify", "--help", expect=EXIT_OK).stdout
+    assert "--unresolved-layer" in help_text
+    # argparse hard-wraps help, so compare against the whitespace-collapsed text
+    joined = " ".join(help_text.split())
+    assert "hatch and text report LAYER_STATUS == UNRESOLVED" in joined
+    assert "REFUSES any name that" in joined
+    assert "it does not use this flag" in joined
+
+
+def test_unresolved_layer_note_reports_that_block_refuses_unknown(tmp_path: Path) -> None:
+    """The JSON note is user-facing: it must carry the block exception."""
+    out = tmp_path / "hatch.dxf"
+    _record(
+        "hatch",
+        [
+            "--boundary", "0", "0", "2000", "0", "2000", "1000", "0", "1000",
+            "--layer", "HATCHA", "--pattern-name", "ANSI31",
+        ],
+        out,
+    )
+    payload = run_json(
+        "verify", "--in", str(out), "--only", "hatch",
+        "--unresolved-layer", "HATCHA",
+        expect=EXIT_OK,
+    )
+    note = payload["unresolved_layer_note"]
+    assert note, "the declared layer must carry a note"
+    assert "hatch and text" in note
+    assert "does not apply to block" in note
+    assert "refuses" in note
+
+
+def test_layers_help_does_not_advertise_the_rejected_description_key() -> None:
+    """layer.py rejects description; --help must not offer it."""
+    help_text = run_cli("layers", "--help", expect=EXIT_OK).stdout
+    key_lines = " ".join(help_text.split())
+    assert "Keys:" in key_lines, "--set key list missing from layers --help"
+    keys_clause = key_lines.split("Keys:", 1)[1].split(".", 1)[0]
+    assert "description" not in keys_clause
+    # the keys that do work are still listed
+    for key in ("color", "linetype", "lineweight", "locked", "frozen"):
+        assert key in keys_clause, f"{key} missing from layers --set help"
+
+
+def test_set_description_still_fails_with_the_layer_py_rejection(tmp_path: Path) -> None:
+    """Hiding the key in --help must not turn the rejection into an unknown key."""
+    out = tmp_path / "layers.dxf"
+    completed = run_cli(
+        "layers", "--out", str(out), "--set", "WAL1.description=note"
+    )
+    assert completed.returncode == EXIT_USAGE
+    assert "description is unsupported" in (completed.stdout + completed.stderr)

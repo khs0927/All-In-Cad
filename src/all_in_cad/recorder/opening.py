@@ -317,7 +317,9 @@ def make_opening(
     sign = 1.0 if side == "left" else -1.0
     # 'left' draws the symbol towards +normal, 'right' towards -normal. The
     # along-wall positions are identical in both cases, so side is a pure
-    # mirror across the reference line.
+    # mirror across the reference line -- which is why `tick` below steps
+    # along the wall with an UNSIGNED distance and only mirrors the across
+    # step. See the note on `tick`.
     toward = Point2D(normal.x * sign, normal.y * sign)
     start = along(origin, offset)
     end = along(origin, offset + width)
@@ -343,12 +345,27 @@ def make_opening(
     def tick(point: Point2D, step: float) -> tuple[Point2D, Point2D]:
         """45-degree jamb tick: from the jamb itself, one step along the wall
         and one step across, so both components are equal for any wall angle.
+
+        The step ALONG the wall is not signed. Only the step ACROSS is, and
+        that is what makes ``side`` a pure mirror. Multiplying the along
+        component by ``sign`` as well produced a 180-degree rotation instead
+        of a reflection, and the two are not the same drawing: for an opening
+        spanning x=500..1500 on the x axis, side=left put the ticks at
+        500->600 and 1500->1600, so reflecting that drawing across the
+        reference line (the thing ``side`` is documented to do) gives
+        500->600 and 1500->1600 again -- while side=right actually emitted
+        500->400 and 1500->1400, with the end tick leaning back INTO the
+        opening. ``verify`` could not see it: ``opening_ticks_are_45_degree``
+        only compares |along| with |across|, and both spellings satisfy that.
+
+        So the along step stays positive and ``side`` now means what the
+        comment above it says it means.
         """
         return (
             point,
             Point2D(
-                point.x + axis.x * sign * step + toward.x * step,
-                point.y + axis.y * sign * step + toward.y * step,
+                point.x + axis.x * step + toward.x * step,
+                point.y + axis.y * step + toward.y * step,
             ),
         )
 

@@ -19,3 +19,16 @@ jobs/
 # .NET build output for the headless ACadSharp probe
 native/headless/bin/
 native/headless/obj/
+
+# .NET build output for the native hosts; deploy*/ are publish copies made per test run
+native/zwcad2026/bin/
+native/zwcad2026/obj/
+native/zwcad2026/deploy*/
+native/shared/bin/
+native/shared/obj/
+native/autocad2027/bin/
+native/autocad2027/obj/
+
+# CI run output (junit reports); the gate reads them, they are not source
+ci-reports/
+

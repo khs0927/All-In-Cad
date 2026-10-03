@@ -39,7 +39,25 @@ from all_in_cad.topology import Point2D
 def record_id(record) -> str:
     return record.document_id
 
-LAYER_CONFIG = pathlib.Path(__file__).resolve().parents[3] / "configs" / "architectural-layers.json"
+from all_in_cad.recorder.layer import layer_config_path
+
+
+def _layer_config() -> "pathlib.Path":
+    """The repo's layer table, or an explicit skip.
+
+    This test asserts what ``configs/architectural-layers.json`` contains. The
+    path is found by walking upwards rather than by counting parents, so a
+    checkout at a different depth -- or an installed package with no repo
+    above it at all -- skips with a reason instead of failing somewhere that
+    looks like a broken test.
+    """
+    found = layer_config_path()
+    if found is None:
+        pytest.skip(
+            "configs/architectural-layers.json not found at or above "
+            f"{pathlib.Path(__file__).resolve()}"
+        )
+    return found
 
 
 def _new_doc() -> "ezdxf.document.Drawing":
@@ -125,7 +143,7 @@ def test_default_layers_are_the_observed_window_layers() -> None:
 
 
 def test_default_layers_all_exist_in_the_layer_config() -> None:
-    table = json.loads(LAYER_CONFIG.read_text(encoding="utf-8"))["exact"]
+    table = json.loads(_layer_config().read_text(encoding="utf-8"))["exact"]
     for name in DEFAULT_LAYERS:
         assert name in table, f"{name} is not an observed project layer"
 

@@ -1,0 +1,123 @@
+name: dxf-recorder-ci
+
+on:
+  push:
+    branches: ["main", "agent/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+# One in-flight run per ref. A newer push to the same branch cancels the older run
+# so a stale red does not sit in front of a newer green.
+concurrency:
+  group: dxf-recorder-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recorder-tests:
+    name: recorder (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Do not cancel the whole matrix because one Python row failed; we want
+      # the full picture of which versions regressed.
+      fail-fast: false
+      matrix:
+        # pyproject.toml declares requires-python = ">=3.11" with no upper bound
+        # and no classifiers, so 3.14 is inside the declared support range.
+        # 3.14 is included because it is the version the repository's own .venv
+        # runs (CPython 3.14.5); without this leg the interpreter the team
+        # actually uses is never gated, and a regression that only appears on
+        # it is invisible until someone runs it by hand.
+        #
+        # UNVERIFIED: 3.13 has never been executed on any host -- neither a
+        # hosted runner nor locally (the read-only audit of 2026-09-26
+        # covered 3.11.15 and 3.12.14 only, and the "3.13" local baseline it
+        # referred to turned out to be 3.14.5). Its presence in this matrix is
+        # a declaration of intent, not evidence. Until a real 3.13 run is
+        # recorded, treat 3.13 and 3.14 as both unproven.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: python -m pip install --upgrade pip
+      # headless extra pulls in ezdxf>=1.4, which the DXF stack needs.
+      #
+      # The `-e` is load-bearing, not style. With a NON-editable install the
+      # test process imports all_in_cad from site-packages while the child
+      # process it spawns resolves the repo's src/ tree, so
+      # e2e_test.py::test_the_subprocess_cli_runs_the_same_source_this_test_process_sees
+      # fails on every matrix leg -- measured on 3.11.15 and 3.12.14, and it is
+      # a true positive about the install layout, not about the code. Do not
+      # "fix" it by loosening that test or by pinning a non-editable install.
+      - run: python -m pip install -e ".[dev,headless]"
+
+      - name: Show resolved runtime
+        # Printing the import path makes the editable-vs-installed difference
+        # visible in the log instead of leaving it to be inferred from a
+        # subprocess assertion failure.
+        run: |
+          python -VV
+          python -c "import all_in_cad, ezdxf, pytest; print('all_in_cad', all_in_cad.__file__); print('ezdxf', ezdxf.__version__); print('pytest', pytest.__version__)"
+
+      - name: Lint the CI gate itself
+        # ci/ is not covered by core-ci's `ruff check src tests scripts`, so
+        # the gate that decides whether a green lane is allowed to stay green
+        # was the one piece of new Python nothing linted. Same tool, same
+        # config: ruff >=0.8 comes from the `dev` extra this job already
+        # installs, and pyproject.toml's [tool.ruff] settings apply unchanged.
+        run: ruff check ci
+
+      - name: Run DXF recorder stack tests
+        run: |
+          mkdir -p ci-reports
+          # --junitxml gives a machine-readable record of what actually ran.
+          # -rA prints every skip reason into the log, not just the summary line.
+          python -m pytest src/all_in_cad/recorder \
+            -o addopts="" \
+            -q -rA \
+            --junitxml=ci-reports/recorder-junit.xml
+
+      - name: Prove the coverage gate itself still detects a lost suite
+        # A gate that nothing tests is an assertion, not a check. These
+        # contract tests fail if the gate is weakened the way it was
+        # weakened before.
+        run: python -m pytest ci/recorder_ci_gate_test.py -o addopts="" -q
+
+      - name: Assert no test silently disappeared
+        # The collection floor is read from
+        # ci/recorder-collection-baseline.txt, generated from a real
+        # report, and the environment skips are a named allowlist rather
+        # than a number. See ci/recorder_ci_gate.py for why both matter.
+        run: python ci/recorder_ci_gate.py ci-reports/recorder-junit.xml
+
+      - name: Explain any FreeCAD skip explicitly
+        # Named by id, deliberately without a count. A single number here is a
+        # second source of truth that goes stale the moment a test is added or
+        # renamed -- and a stale one is worse than none, because it reads as
+        # reassurance. ci/recorder_ci_gate.py holds the allowlist and fails the
+        # lane if an allowlisted id starts running or disappears, so these ids
+        # are the enumerated hole rather than a summary of it.
+        if: always()
+        run: |
+          echo "FreeCAD is not installed on GitHub-hosted runners."
+          echo "The tests that skip for that reason are listed by id in ci/recorder_ci_gate.py:"
+          echo "  block_test::test_freecad_import_keeps_the_block_shape_in_both_modes"
+          echo "  e2e_test::test_scenario4_freecad_opens_the_recording_and_keeps_the_layers"
+          echo "  freecad_runner_test::test_live_freecad_verdict_record_proves_success"
+          echo "  text_test::test_freecad_import_survival"
+          echo "Each skip that actually happened was named with a reason in the pytest log above (-rA)."
+          echo "Until a FreeCAD lane exists, these are unverified on CI. See ci/recorder_ci_gate.py."
+          ls -l ci-reports || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: recorder-junit-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-reports/
+          if-no-files-found: error
+          retention-days: 30

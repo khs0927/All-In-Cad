@@ -33,7 +33,25 @@ from all_in_cad.recorder.opening import (
 )
 from all_in_cad.semantic_layers import LayerSemantic, classify_layer
 
-LAYER_CONFIG = pathlib.Path(__file__).resolve().parents[3] / "configs" / "architectural-layers.json"
+from all_in_cad.recorder.layer import layer_config_path
+
+
+def _layer_config() -> pathlib.Path:
+    """The repo's layer table, or an explicit skip.
+
+    These tests assert what ``configs/architectural-layers.json`` does and
+    does not contain. With no table present there is nothing to assert about,
+    and the honest outcome is a SKIP that says so -- not a
+    ``FileNotFoundError`` from a path arithmetic, and certainly not a pass.
+    """
+    found = layer_config_path()
+    if found is None:
+        pytest.skip(
+            "configs/architectural-layers.json not found at or above "
+            f"{pathlib.Path(__file__).resolve()}"
+        )
+    return found
+
 
 HORIZONTAL = ((0, 0), (12000, 0))
 VERTICAL = ((0, 0), (0, 12000))
@@ -106,7 +124,7 @@ def test_layer_mapping_is_flagged_unresolved() -> None:
 
 
 def test_the_layer_config_really_has_no_opening_key() -> None:
-    table = json.loads(LAYER_CONFIG.read_text(encoding="utf-8"))["exact"]
+    table = json.loads(_layer_config().read_text(encoding="utf-8"))["exact"]
     assert not any("OPEN" in name.upper() for name in table), (
         "configs/architectural-layers.json gained an opening layer; the "
         "'unresolved' label in opening.py must be revisited"
@@ -136,9 +154,46 @@ def test_default_layers_are_absent_from_the_layer_config() -> None:
     # A TEMP name must NOT be a configured semantic layer. If someone adds it
     # to configs/architectural-layers.json, LAYER_MAPPING_RESOLVED has to be
     # revisited and these tests are what force that review.
-    table = json.loads(LAYER_CONFIG.read_text(encoding="utf-8"))["exact"]
+    table = json.loads(_layer_config().read_text(encoding="utf-8"))["exact"]
     for name in DEFAULT_LAYERS:
         assert name not in table
+
+
+def test_the_layer_config_lookup_does_not_assume_a_repository_depth(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The layout assumption, stated as a test, because it used to be silent.
+
+    ``parents[3]`` was not a path, it was an assertion that this package sits
+    exactly four levels below a repository root. Every other environment gets
+    either a crash or, worse, a path that exists and is not the layer table.
+    Both turn into a test failure whose name is about layers, so the actual
+    cause -- the checkout depth -- is invisible in the report.
+    """
+    from all_in_cad.recorder.layer import layer_config_path
+
+    # an arbitrary depth, nothing like the repository's
+    deep = tmp_path / "vendor" / "a" / "b" / "c" / "d" / "e"
+    deep.mkdir(parents=True)
+    table = deep / "configs" / "architectural-layers.json"
+    table.parent.mkdir()
+    table.write_text('{"exact": {}}', encoding="utf-8")
+
+    nested_module = deep / "pkg" / "sub" / "mod.py"
+    nested_module.parent.mkdir(parents=True)
+    nested_module.write_text("", encoding="utf-8")
+
+    assert layer_config_path(nested_module) == table.resolve(), (
+        "the lookup must walk upwards from where it was asked, at any depth"
+    )
+    # a start that IS the configs' parent is found too, not only its children
+    assert layer_config_path(deep) == table.resolve()
+
+    # and with nothing above it, the answer is None -- which is what lets the
+    # caller SKIP with a reason instead of reading a non-existent file
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert layer_config_path(empty / "nowhere" / "mod.py") is None
 
 
 def test_default_layers_classify_as_unknown_not_wall() -> None:
@@ -307,6 +362,59 @@ def test_ticks_sit_at_the_two_jambs() -> None:
     end_tick = opening.spec("tick_end")
     assert start_tick.start.x == pytest.approx(0.0)
     assert end_tick.start.x == pytest.approx(2000.0)
+
+
+def test_side_is_a_pure_mirror_and_not_a_rotation() -> None:
+    """The invariant the `side` comment claims, asserted instead of assumed.
+
+    The audit (m2) found the jamb tick multiplying its ALONG component by
+    ``sign`` as well as its across component. That is a 180-degree rotation,
+    not a reflection, so ``side='right'`` was not the mirror of
+    ``side='left'``: for an opening on the x axis it emitted
+    500->400 and 1500->1400 where the mirrored drawing has 500->600 and
+    1500->1600, putting the end tick back inside the opening.
+
+    The 45-degree test above cannot see any of this -- |along| == |across|
+    holds under both spellings -- which is why it stayed green. So the law is
+    stated here directly: reflecting every symbol point of the left drawing
+    across the reference line must reproduce the right drawing exactly.
+    Reflecting only the ACROSS component is what a mirror is; flipping both
+    components is a rotation and produces a different drawing.
+    """
+    left = make_opening(HORIZONTAL, 1000, side="left")
+    right = make_opening(HORIZONTAL, 1000, side="right")
+
+    def reflect(spec):
+        return (spec.start.x, -spec.start.y), (spec.end.x, -spec.end.y)
+
+    roles = [spec.role for spec in left.entities]
+    assert roles == [spec.role for spec in right.entities]
+    for role in roles:
+        lhs = left.spec(role)
+        rhs = right.spec(role)
+        assert reflect(lhs) == ((rhs.start.x, rhs.start.y),
+                               (rhs.end.x, rhs.end.y)), (
+            f"role {role!r}: side='right' is not the reflection of "
+            f"side='left'. A mirror flips the across component only; flipping "
+            f"the along component too yields a different drawing that still "
+            f"satisfies every 45-degree check."
+        )
+
+
+def test_the_end_tick_does_not_lean_back_into_the_opening() -> None:
+    """The drawing-quality consequence, which is what a drafter would see.
+
+    An opening spanning x=500..1500 on the x axis has its far jamb at 1500.
+    Under the rotation bug the side='right' tick ran 1500 -> 1400, i.e. back
+    across the opening it is supposed to be marking.
+    """
+    opening = make_opening(HORIZONTAL, 1000, side="right")
+    end_tick = opening.spec("tick_end")
+    jamb = opening.end_point.x
+    assert end_tick.end.x > jamb, (
+        f"the end jamb tick ran from {jamb} back to {end_tick.end.x}, into the "
+        "opening. The along step must not be mirrored."
+    )
 
 
 # --- (4) axis-aligned and oblique wall symmetry --------------------------------

@@ -1,0 +1,21 @@
+# Recorded collection count for `pytest src/all_in_cad/recorder`.
+#
+# Regenerate deliberately, from a real report, with:
+#   python ci/recorder_ci_gate.py ci-reports/recorder-junit.xml --write-baseline
+#
+# This is a FLOOR. A larger suite must never fail because of it; a
+# smaller one means tests stopped being collected, which is the
+# failure mode this whole file exists to catch.
+#
+# How the number below was measured (not a claim about the suite in general):
+#   measured at: 2026-10-03T14:28:57+09:00
+#   interpreter:  .\.venv\Scripts\python.exe  (CPython 3.14)
+#   environment:  $env:PYTHONHOME=$null; $env:PYTHONPATH=$null
+#   command:      python -m pytest src\all_in_cad\recorder --collect-only -q -o addopts=""
+#   result:       843 tests collected
+#
+# The collection count is environment-independent: a runner with no FreeCAD
+# changes which tests skip, never which tests collect, so this floor holds on a
+# GitHub-hosted runner as well as here. It is raised only, never lowered --
+# RECORDER_MIN_COLLECTED may raise it further, and the gate refuses to lower it.
+843
