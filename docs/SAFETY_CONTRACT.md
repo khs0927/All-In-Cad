@@ -33,3 +33,15 @@ approval, revision, lease, transaction and read-back fences.
 Execution receipts may carry the Ontology handoff digest plus source/revision identifiers.
 This creates an auditable loop `Ontology SOURCE_BOUND -> CAD execution -> receipt ->
 Ontology evidence` without making GraphRAG or source lookup an execution authority.
+
+
+## Drawing grammar hint boundary
+
+`ChangePlan.drawing_grammar` may carry an HS-CAD
+`cad-drawing-grammar/1` contract. The grammar is a frozen read-only hint for
+layer/text/dimension/style generation. Its sample digest and nearby entity count
+are validated, while `execution_authorized=false` and
+`may_execute_mutation=false` are invariant.
+
+A drawing grammar never replaces document binding, revision checks, approval,
+native transaction fences, or read-back verification.
