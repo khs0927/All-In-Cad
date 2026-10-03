@@ -21,6 +21,25 @@ class AdapterChannel(StrEnum):
     EZDXF = "ezdxf"
 
 
+class SourceBindingRef(BaseModel):
+    """Cross-repository provenance from Ontology SOURCE_BOUND to a native CAD executor."""
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    schema: Literal["aec-executor-handoff/1"] = "aec-executor-handoff/1"
+    binding_state: Literal["SOURCE_BOUND"] = "SOURCE_BOUND"
+    review_status: Literal["VERIFIED_FOR_REVIEW"] = "VERIFIED_FOR_REVIEW"
+    document_id: str = Field(min_length=1)
+    source_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_byte_revision_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parser_revision_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    handoff_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    resolver_receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_authorized: Literal[False] = False
+    may_execute_mutation: Literal[False] = False
+    requires_executor_authorization: Literal[True] = True
+
+
 class DocumentRef(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -29,6 +48,13 @@ class DocumentRef(BaseModel):
     document_id: str = Field(min_length=1)
     revision: int = Field(ge=0)
     path: str | None = None
+    source_binding: SourceBindingRef | None = None
+
+    @model_validator(mode="after")
+    def validate_source_binding(self) -> DocumentRef:
+        if self.source_binding is not None and self.source_binding.document_id != self.document_id:
+            raise ValueError("source_binding.document_id must match document_id")
+        return self
 
 
 class EntityRef(BaseModel):
@@ -118,6 +144,10 @@ class ExecutionReceipt(BaseModel):
     idempotency_key: str
     committed: bool
     results: list[OperationResult] = Field(default_factory=list)
+    source_binding_handoff_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_byte_revision_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    parser_revision_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def validate_revision_progress(self) -> ExecutionReceipt:
