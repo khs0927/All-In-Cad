@@ -31,12 +31,11 @@ jobs:
         # actually uses is never gated, and a regression that only appears on
         # it is invisible until someone runs it by hand.
         #
-        # UNVERIFIED: 3.13 has never been executed on any host -- neither a
-        # hosted runner nor locally (the read-only audit of 2026-09-26
-        # covered 3.11.15 and 3.12.14 only, and the "3.13" local baseline it
-        # referred to turned out to be 3.14.5). Its presence in this matrix is
-        # a declaration of intent, not evidence. Until a real 3.13 run is
-        # recorded, treat 3.13 and 3.14 as both unproven.
+        # LOCAL EVIDENCE ONLY (Windows, not a hosted runner): at commit e2f67ec this
+        # lane was reproduced on CPython 3.11.15, 3.12.14, 3.13.15 and 3.14.5 with
+        # FreeCAD hidden -- 848 collected, 844 passed, 4 allowlisted skips, gate
+        # exit 0 on every leg. No hosted GitHub run has been recorded yet, so
+        # ubuntu-latest behaviour on every leg is still unproven.
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
