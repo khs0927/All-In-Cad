@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+import re
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -59,7 +60,7 @@ class DrawingGrammarRef(BaseModel):
     def validate_evidence(self) -> DrawingGrammarRef:
         sample_digest = self.evidence.get("sample_digest")
         nearby_count = self.evidence.get("nearby_entity_count")
-        if not isinstance(sample_digest, str) or not __import__("re").fullmatch(
+        if not isinstance(sample_digest, str) or not re.fullmatch(
             r"[0-9a-f]{64}", sample_digest
         ):
             raise ValueError("drawing grammar evidence.sample_digest must be SHA-256")
