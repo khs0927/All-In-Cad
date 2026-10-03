@@ -1,5 +1,5 @@
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from all_in_cad.models import (
     ChangeOperation,
