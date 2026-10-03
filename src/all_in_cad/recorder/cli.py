@@ -169,20 +169,21 @@ try:  # package-relative import (normal case)
         write_block_insert,
     )
     from .dim import (
+        DEFAULT_LAYERS as DEFAULT_DIM_LAYERS,
+    )
+    from .dim import (
         DimGeometryError,
         DimKind,
-        make_dim,
         ensure_dim,
-        rendered_text as dim_rendered_text,
+        make_dim,
         write_dim,
     )
     from .dim import (
-        DEFAULT_LAYERS as DEFAULT_DIM_LAYERS,
+        rendered_text as dim_rendered_text,
     )
     from .door import (
         DEFAULT_FRAME_WIDTH_MM,
         DoorGeometryError,
-        DoorRecord,
         make_door,
         make_door_centered,
         write_door,
@@ -200,23 +201,30 @@ try:  # package-relative import (normal case)
         write_hatch,
     )
     from .layer import (
-        DestructiveLayerChange,
         LayerValidationError,
         make_layer,
         write_layers,
-    )
-    from .opening import (
-        LAYER_MAPPING_RESOLVED as OPENING_LAYER_MAPPING_RESOLVED,
     )
     from .opening import (
         DEFAULT_LAYERS as DEFAULT_OPENING_LAYERS,
     )
     from .opening import (
         DEFAULT_OPENING_WIDTH_MM,
-        DEFAULT_THICKNESS_MM as DEFAULT_OPENING_THICKNESS_MM,
         OpeningGeometryError,
         make_opening,
         write_opening,
+    )
+    from .opening import (
+        DEFAULT_THICKNESS_MM as DEFAULT_OPENING_THICKNESS_MM,
+    )
+    from .opening import (
+        LAYER_MAPPING_RESOLVED as OPENING_LAYER_MAPPING_RESOLVED,
+    )
+    from .text import (
+        TextValidationError,
+        make_mtext,
+        make_text,
+        write_text,
     )
     from .transaction import (
         FileState,
@@ -224,12 +232,6 @@ try:  # package-relative import (normal case)
         VerificationFailed,
         capture_state,
         dxf_verifier,
-    )
-    from .text import (
-        TextValidationError,
-        make_mtext,
-        make_text,
-        write_text,
     )
     from .transaction import (
         begin as begin_transaction,
@@ -244,12 +246,16 @@ try:  # package-relative import (normal case)
     )
     from .window import (
         DEFAULT_DIVISIONS,
-        DEFAULT_LAYERS as DEFAULT_WINDOW_LAYERS,
-        DEFAULT_THICKNESS_MM as DEFAULT_WINDOW_THICKNESS_MM,
         DEFAULT_WINDOW_WIDTH_MM,
         WindowGeometryError,
         make_window,
         write_window,
+    )
+    from .window import (
+        DEFAULT_LAYERS as DEFAULT_WINDOW_LAYERS,
+    )
+    from .window import (
+        DEFAULT_THICKNESS_MM as DEFAULT_WINDOW_THICKNESS_MM,
     )
 except ImportError:  # pragma: no cover - direct/flat execution fallback
     from all_in_cad.recorder.block import (  # type: ignore[no-redef]
@@ -263,38 +269,21 @@ except ImportError:  # pragma: no cover - direct/flat execution fallback
         write_block_insert,
     )
     from all_in_cad.recorder.dim import (  # type: ignore[no-redef]
-        DimGeometryError,
-        DimKind,
-        make_dim,
-        ensure_dim,
-        rendered_text as dim_rendered_text,
-        write_dim,
-    )
-    from all_in_cad.recorder.dim import (  # type: ignore[no-redef]
         DEFAULT_LAYERS as DEFAULT_DIM_LAYERS,
     )
-    from all_in_cad.recorder.hatch import (  # type: ignore[no-redef]
-        HatchValidationError,
-        make_hatch,
-        read_hatch_metadata,
-        write_hatch,
+    from all_in_cad.recorder.dim import (  # type: ignore[no-redef]
+        DimGeometryError,
+        DimKind,
+        ensure_dim,
+        make_dim,
+        write_dim,
     )
-    from all_in_cad.recorder.layer import (  # type: ignore[no-redef]
-        DestructiveLayerChange,
-        LayerValidationError,
-        make_layer,
-        write_layers,
-    )
-    from all_in_cad.recorder.text import (  # type: ignore[no-redef]
-        TextValidationError,
-        make_mtext,
-        make_text,
-        write_text,
+    from all_in_cad.recorder.dim import (
+        rendered_text as dim_rendered_text,
     )
     from all_in_cad.recorder.door import (  # type: ignore[no-redef]
         DEFAULT_FRAME_WIDTH_MM,
         DoorGeometryError,
-        DoorRecord,
         make_door,
         make_door_centered,
         write_door,
@@ -305,18 +294,37 @@ except ImportError:  # pragma: no cover - direct/flat execution fallback
     from all_in_cad.recorder.door import (
         DEFAULT_THICKNESS_MM as DEFAULT_DOOR_THICKNESS_MM,
     )
-    from all_in_cad.recorder.opening import (  # type: ignore[no-redef]
-        LAYER_MAPPING_RESOLVED as OPENING_LAYER_MAPPING_RESOLVED,
+    from all_in_cad.recorder.hatch import (  # type: ignore[no-redef]
+        HatchValidationError,
+        make_hatch,
+        read_hatch_metadata,
+        write_hatch,
+    )
+    from all_in_cad.recorder.layer import (  # type: ignore[no-redef]
+        LayerValidationError,
+        make_layer,
+        write_layers,
     )
     from all_in_cad.recorder.opening import (  # type: ignore[no-redef]
         DEFAULT_LAYERS as DEFAULT_OPENING_LAYERS,
     )
     from all_in_cad.recorder.opening import (  # type: ignore[no-redef]
         DEFAULT_OPENING_WIDTH_MM,
-        DEFAULT_THICKNESS_MM as DEFAULT_OPENING_THICKNESS_MM,
         OpeningGeometryError,
         make_opening,
         write_opening,
+    )
+    from all_in_cad.recorder.opening import (
+        DEFAULT_THICKNESS_MM as DEFAULT_OPENING_THICKNESS_MM,
+    )
+    from all_in_cad.recorder.opening import (  # type: ignore[no-redef]
+        LAYER_MAPPING_RESOLVED as OPENING_LAYER_MAPPING_RESOLVED,
+    )
+    from all_in_cad.recorder.text import (  # type: ignore[no-redef]
+        TextValidationError,
+        make_mtext,
+        make_text,
+        write_text,
     )
     from all_in_cad.recorder.transaction import (  # type: ignore[no-redef]
         FileState,
@@ -338,12 +346,16 @@ except ImportError:  # pragma: no cover - direct/flat execution fallback
     )
     from all_in_cad.recorder.window import (  # type: ignore[no-redef]
         DEFAULT_DIVISIONS,
-        DEFAULT_LAYERS as DEFAULT_WINDOW_LAYERS,
-        DEFAULT_THICKNESS_MM as DEFAULT_WINDOW_THICKNESS_MM,
         DEFAULT_WINDOW_WIDTH_MM,
         WindowGeometryError,
         make_window,
         write_window,
+    )
+    from all_in_cad.recorder.window import (
+        DEFAULT_LAYERS as DEFAULT_WINDOW_LAYERS,
+    )
+    from all_in_cad.recorder.window import (
+        DEFAULT_THICKNESS_MM as DEFAULT_WINDOW_THICKNESS_MM,
     )
     from all_in_cad.semantic_layers import LayerSemantic, classify_layer
     from all_in_cad.topology import Point2D
@@ -1053,11 +1065,22 @@ def _add_hatch_arguments(parser: argparse.ArgumentParser) -> None:
             "refused rather than drawn blank"
         ),
     )
-    parser.add_argument("--scale", type=float, default=1.0, metavar="F", help="pattern scale (default: 1.0)")
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        metavar="F",
+        help="pattern scale (default: 1.0)",
+    )
     parser.add_argument(
         "--angle-deg", type=float, default=0.0, metavar="DEG", help="pattern angle (default: 0)"
     )
-    parser.add_argument("--name", default="", metavar="TEXT", help="optional hatch name (default: empty)")
+    parser.add_argument(
+        "--name",
+        default="",
+        metavar="TEXT",
+        help="optional hatch name (default: empty)",
+    )
     parser.add_argument(
         "--min-area",
         type=float,
@@ -1136,11 +1159,22 @@ def _add_text_arguments(parser: argparse.ArgumentParser) -> None:
             "text layer is observed in configs/architectural-layers.json"
         ),
     )
-    parser.add_argument("--height", type=float, default=2.5, metavar="MM", help="cap height (default: 2.5)")
+    parser.add_argument(
+        "--height",
+        type=float,
+        default=2.5,
+        metavar="MM",
+        help="cap height (default: 2.5)",
+    )
     parser.add_argument(
         "--rotation-deg", type=float, default=0.0, metavar="DEG", help="rotation (default: 0)"
     )
-    parser.add_argument("--style", default="Standard", metavar="NAME", help="text style (default: Standard)")
+    parser.add_argument(
+        "--style",
+        default="Standard",
+        metavar="NAME",
+        help="text style (default: Standard)",
+    )
     parser.add_argument(
         "--mtext", action="store_true",
         help="write an MTEXT (multi-line capable) instead of a single-line TEXT",
@@ -1153,9 +1187,26 @@ def _add_text_arguments(parser: argparse.ArgumentParser) -> None:
         "--attachment-point", type=int, default=1, metavar="N",
         help="MTEXT attachment point, 1-10 (default: 1)",
     )
-    parser.add_argument("--halign", type=int, default=0, metavar="N", help="TEXT horizontal alignment (default: 0)")
-    parser.add_argument("--valign", type=int, default=0, metavar="N", help="TEXT vertical alignment (default: 0)")
-    parser.add_argument("--role", default="note", metavar="NAME", help="recorded role (default: note)")
+    parser.add_argument(
+        "--halign",
+        type=int,
+        default=0,
+        metavar="N",
+        help="TEXT horizontal alignment (default: 0)",
+    )
+    parser.add_argument(
+        "--valign",
+        type=int,
+        default=0,
+        metavar="N",
+        help="TEXT vertical alignment (default: 0)",
+    )
+    parser.add_argument(
+        "--role",
+        default="note",
+        metavar="NAME",
+        help="recorded role (default: note)",
+    )
 
 
 def _add_block_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1201,9 +1252,19 @@ def _add_block_arguments(parser: argparse.ArgumentParser) -> None:
         help="layer for the INSERT/flattened entities; derived from content when omitted",
     )
     parser.add_argument(
-        "--rotation-deg", type=float, default=0.0, metavar="DEG", help="instance rotation (default: 0)"
+        "--rotation-deg",
+        type=float,
+        default=0.0,
+        metavar="DEG",
+        help="instance rotation (default: 0)",
     )
-    parser.add_argument("--scale", type=float, default=1.0, metavar="F", help="instance scale (default: 1.0)")
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        metavar="F",
+        help="instance scale (default: 1.0)",
+    )
     parser.add_argument(
         "--mode",
         choices=tuple(mode.value for mode in BlockInsertMode),
@@ -2153,6 +2214,11 @@ def cmd_text(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
+        roundtrip_note = (
+            "intact"
+            if record.roundtrip.intact
+            else "DAMAGED: " + str(record.roundtrip.failures())
+        )
         _print_written(
             "text",
             path,
@@ -2161,7 +2227,7 @@ def cmd_text(args: argparse.Namespace) -> int:
             f"({geometry.insert.x:g},{geometry.insert.y:g}), height "
             f"{geometry.height:g} mm, rotation {geometry.rotation_deg:g} deg\n"
             f"  style {geometry.style}, layer {record.layer}, roundtrip "
-            f"{'intact' if record.roundtrip.intact else 'DAMAGED: ' + str(record.roundtrip.failures())}\n"
+            f"{roundtrip_note}\n"
             f"  verify with: {payload['verify_hint']}",
             len(handles),
             layer_counts,
@@ -2201,7 +2267,11 @@ def _build_block(args: argparse.Namespace) -> tuple[Any, Any]:
                     layer=args.entity_layer,
                 )
             )
-        definition = make_block_definition(args.name, entities, base_point=_point(args.base, "--base"))
+        definition = make_block_definition(
+            args.name,
+            entities,
+            base_point=_point(args.base, "--base"),
+        )
         insert = make_block_insert(
             definition,
             _point(args.location, "--location"),
@@ -2679,7 +2749,9 @@ def _analyse_window(
 
     lines = [item for item in window_entities if item["type"] == "LINE"]
     arcs = [item for item in window_entities if item["type"] == "ARC"]
-    bar_lines = [item for item in lines if classify_layer(item["layer"]) is LayerSemantic.WINDOW_BAR]
+    bar_lines = [
+        item for item in lines if classify_layer(item["layer"]) is LayerSemantic.WINDOW_BAR
+    ]
     face_lines = [item for item in lines if classify_layer(item["layer"]) is LayerSemantic.WINDOW]
     layers = sorted({item["layer"] for item in window_entities})
     measured["line_count"] = len(lines)
@@ -2720,7 +2792,11 @@ def _analyse_window(
     # edges are exactly as long as the wall thickness across the opening.
     if not same_layer:
         checks.append(
-            _check("window_glazing_line_identified", False, f"no lines on window layer {window_layer}")
+            _check(
+                "window_glazing_line_identified",
+                False,
+                f"no lines on window layer {window_layer}",
+            )
         )
         return checks, measured
     glazing = max(same_layer, key=lambda item: _length(item["start"], item["end"]))
@@ -2815,7 +2891,10 @@ def _analyse_window(
     #     equals the opening width. The module docstring's "hinge at the indoor
     #     jamb" is not literally true of the centre point, so the check asserts
     #     the geometry that actually holds rather than the prose.
-    hinge_side = min(jamb_mids, key=lambda mid: math.dist(mid, (arc["center"][0], arc["center"][1])))
+    hinge_side = min(
+        jamb_mids,
+        key=lambda mid: math.dist(mid, (arc["center"][0], arc["center"][1])),
+    )
     arc_to_hinge_jamb = math.dist(arc["center"], hinge_side)
     measured["arc_centre_to_hinge_jamb_mm"] = arc_to_hinge_jamb
     measured["arc_expected_hinge_offset_mm"] = thickness / 2.0
@@ -3672,7 +3751,11 @@ def _analyse_hatch(
             "hatch_pattern_name_present",
             all(name.strip() for name in patterns),
             f"hatch pattern names: {patterns}"
-            + ("" if all(name.strip() for name in patterns) else " (an unnamed pattern is not a contract)"),
+            + (
+                ""
+                if all(name.strip() for name in patterns)
+                else " (an unnamed pattern is not a contract)"
+            ),
             pattern_names=patterns,
         )
     )
@@ -3814,7 +3897,11 @@ def _analyse_text(
             "text_content_non_empty",
             all(content.strip() for content in contents),
             f"annotation content: {contents}"
-            + ("" if all(content.strip() for content in contents) else " (empty text is not an annotation)"),
+            + (
+                ""
+                if all(content.strip() for content in contents)
+                else " (empty text is not an annotation)"
+            ),
             contents=contents,
         )
     )
@@ -4488,7 +4575,9 @@ def verify_drawing(
         "layers": layers_measured,
         "unresolved_layers_declared": list(unresolved_layers),
         "unresolved_layer_note": UNRESOLVED_LAYER_NOTE if unresolved_layers else None,
-        "insert_visibility_note": INSERT_VISIBILITY_NOTE if block_measured.get("insert_count") else None,
+        "insert_visibility_note": (
+            INSERT_VISIBILITY_NOTE if block_measured.get("insert_count") else None
+        ),
         "opening_layer_mapping_resolved": OPENING_LAYER_MAPPING_RESOLVED,
         "checks": checks,
         "failed": failed,
@@ -4703,10 +4792,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="required opening centre",
     )
     verify_parser.add_argument(
-        "--expect-window-width", type=float, default=None, metavar="MM", help="required window opening width"
+        "--expect-window-width",
+        type=float,
+        default=None,
+        metavar="MM",
+        help="required window opening width",
     )
     verify_parser.add_argument(
-        "--expect-opening-width", type=float, default=None, metavar="MM", help="required wall-opening width"
+        "--expect-opening-width",
+        type=float,
+        default=None,
+        metavar="MM",
+        help="required wall-opening width",
     )
     verify_parser.add_argument(
         "--expect-hatch-area",

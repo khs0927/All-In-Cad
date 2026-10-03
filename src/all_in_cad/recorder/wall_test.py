@@ -83,7 +83,12 @@ def test_horizontal_wall_caps_and_entity_count() -> None:
     wall = make_wall((0.0, 0.0), (12000.0, 0.0), 200.0)
     roles = _edges_by_role(wall)
 
-    assert set(roles) == {WallRole.FACE_NEG, WallRole.FACE_POS, WallRole.CAP_START, WallRole.CAP_END}
+    assert set(roles) == {
+        WallRole.FACE_NEG,
+        WallRole.FACE_POS,
+        WallRole.CAP_START,
+        WallRole.CAP_END,
+    }
     assert len(wall.edges()) == 4
 
     start_cap = roles[WallRole.CAP_START][0]
@@ -414,7 +419,7 @@ def test_roundtrip_matches_record_handles_layers_and_snapshots(doc) -> None:
     reloaded = ezdxf.read(stream)
 
     by_handle = {e.dxf.handle: e for e in reloaded.modelspace()}
-    for role, handle, entity_type, layer, start, end in record.entities:
+    for _role, handle, entity_type, layer, start, end in record.entities:
         entity = by_handle[handle.upper()]
         assert entity.dxftype() == entity_type == "LINE"
         assert entity.dxf.layer == layer

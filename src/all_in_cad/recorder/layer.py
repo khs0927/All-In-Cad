@@ -143,7 +143,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard, never needed at runtime
+    from pathlib import Path
 
 try:  # package-relative import (normal case)
     from ..semantic_layers import LayerSemantic, classify_layer, normalize_layer_name
@@ -269,7 +272,7 @@ class DestructiveLayerChange(LayerValidationError):
     """
 
 
-def layer_config_path(start: "Path | None" = None) -> "Path | None":
+def layer_config_path(start: Path | None = None) -> Path | None:
     """Locate ``configs/architectural-layers.json`` by walking upwards.
 
     Returns ``None`` when no such file exists at or above ``start`` (which
@@ -425,7 +428,9 @@ class LayerSpec:
             if value is not None and not isinstance(value, bool):
                 raise LayerValidationError(f"{flag} must be a bool or None")
         if self.description is not None:
-            raise LayerValidationError("description is unsupported: DXF LAYER has no description attribute")
+            raise LayerValidationError(
+                "description is unsupported: DXF LAYER has no description attribute"
+            )
         if self.on is False and self.frozen is True:
             raise LayerValidationError(
                 "a layer cannot be requested both off and frozen"

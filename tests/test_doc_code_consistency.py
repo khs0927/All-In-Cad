@@ -131,7 +131,11 @@ def _check_names_and_forbidden_types() -> tuple[set[str], set[str]]:
     forbidden: set[str] | None = None
     unreadable: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_check":
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_check"
+        ):
             first = node.args[0] if node.args else None
             if isinstance(first, ast.Constant) and isinstance(first.value, str):
                 checks.add(first.value)
@@ -153,7 +157,11 @@ def _check_names_and_forbidden_types() -> tuple[set[str], set[str]]:
             if any(isinstance(t, ast.Name) and t.id == "FORBIDDEN_DXF_TYPES" for t in targets):
                 value = node.value
                 if isinstance(value, (ast.Tuple, ast.List)):
-                    forbidden = {elt.value for elt in value.elts if isinstance(elt, ast.Constant) and isinstance(elt.value, str)}
+                    forbidden = {
+                        elt.value
+                        for elt in value.elts
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                    }
     assert not unreadable, (
         "every _check call in cli.py must take a string-literal name; these calls would "
         "silently drop their check from the documentation comparison: " + ", ".join(unreadable)
@@ -225,7 +233,9 @@ def _assert_consistent(pipeline: str, readme: str) -> None:
     # Blanket prohibitions are contradictory when the live tuple permits INSERT.
     if "INSERT" not in forbidden:
         assert not re.search(
-            r"(?:INSERT\s*(?:도\s*)?HATCH\s*(?:도\s*)?(?:없다|금지|전무)|INSERT.{0,12}(?:금지|전무)|(?:없다|전무).{0,12}INSERT)", combined
+            r"(?:INSERT\s*(?:도\s*)?HATCH\s*(?:도\s*)?(?:없다|금지|전무)"
+            r"|INSERT.{0,12}(?:금지|전무)|(?:없다|전무).{0,12}INSERT)",
+            combined,
         ), "docs still claim INSERT is categorically forbidden"
 
     # The docs must state the policy in both directions, based on the live tuple.
@@ -235,7 +245,9 @@ def _assert_consistent(pipeline: str, readme: str) -> None:
     else:
         assert "HATCH" not in forbidden
     if "INSERT" in forbidden:
-        assert re.search(r"INSERT.{0,60}(?:금지|거부)|(?:금지|거부).{0,60}INSERT", combined, re.S), \
+        assert re.search(
+            r"INSERT.{0,60}(?:금지|거부)|(?:금지|거부).{0,60}INSERT", combined, re.S
+        ), \
             "FORBIDDEN_DXF_TYPES includes INSERT but docs do not say INSERT is forbidden"
     else:
         assert re.search(r"INSERT.{0,100}(?:허용|allowed)", combined, re.S), \
@@ -250,7 +262,11 @@ def _module_constant(path: Path, name: str) -> ast.AST:
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == name:
                     return node.value
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+        ):
             assert node.value is not None, f"{path.name}:{name} has no assigned value"
             return node.value
     raise AssertionError(f"{name} must be extractable from {path.name}")
@@ -275,7 +291,11 @@ def test_observed_wall_count_matches_source_inventory() -> None:
     observed = module_doc.split(OBSERVED_MARKER, 1)[1].split(OBSERVED_END_MARKER, 1)[0]
     # Whole-word LINE only: LWPOLYLINE / POLYLINE / XLINE are different entity
     # types and must not be credited as LINE evidence.
-    entity_lines = [line for line in observed.splitlines() if re.search(r"\bLINE\b", line) and "layer" in line]
+    entity_lines = [
+        line
+        for line in observed.splitlines()
+        if re.search(r"\bLINE\b", line) and "layer" in line
+    ]
     counts = [len(re.findall(r"\bLINE\b", line)) for line in entity_lines]
     assert counts == [1, 2, 3, 1], (
         "expected the four observed layer entries (1+2+3+1 whole-word LINE records) in the "
@@ -329,7 +349,11 @@ def _layer_argument_keywords() -> dict[str, str]:
                 continue
             if isinstance(sub, str):
                 break
-        if not isinstance(sub, str) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+        if (
+            not isinstance(sub, str)
+            or len(node.targets) != 1
+            or not isinstance(node.targets[0], ast.Name)
+        ):
             continue
         var = node.targets[0].id
         parser_vars[var] = sub
@@ -355,12 +379,22 @@ def _layer_argument_keywords() -> dict[str, str]:
         if body is None:
             continue
         for node in ast.walk(body):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument"):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument"
+            ):
                 continue
-            flags = [a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            flags = [
+                a.value
+                for a in node.args
+                if isinstance(a, ast.Constant) and isinstance(a.value, str)
+            ]
             if not any(f in ("--layer", "--entity-layer") for f in flags):
                 continue
-            result[sub] = ", ".join(f"{kw.arg}={ast.unparse(kw.value)}" for kw in node.keywords if kw.arg)
+            result[sub] = ", ".join(
+                f"{kw.arg}={ast.unparse(kw.value)}" for kw in node.keywords if kw.arg
+            )
     return result
 
 
@@ -368,7 +402,11 @@ def test_block_layer_contract_is_classify_based_and_documented() -> None:
     """block refuses layers by classification; the 8 convention names are advice."""
     layers = _module_constant(BLOCK, "CONVENTION_BLOCK_LAYERS")
     assert isinstance(layers, ast.Tuple), "CONVENTION_BLOCK_LAYERS must be a tuple literal"
-    names = [elt.value for elt in layers.elts if isinstance(elt, ast.Constant) and isinstance(elt.value, str)]
+    names = [
+        elt.value
+        for elt in layers.elts
+        if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+    ]
     assert len(names) == 8, f"CONVENTION_BLOCK_LAYERS must name 8 convention layers, found {names}"
 
     block_tree = ast.parse(BLOCK.read_text(encoding="utf-8"))
@@ -389,7 +427,11 @@ def test_block_layer_contract_is_classify_based_and_documented() -> None:
         "is classify_layer() == UNKNOWN based and must be updated"
     )
     validator = next(
-        (n for n in ast.walk(block_tree) if isinstance(n, ast.FunctionDef) and n.name == "_validate_layer"),
+        (
+            n
+            for n in ast.walk(block_tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "_validate_layer"
+        ),
         None,
     )
     assert validator is not None, "block._validate_layer must exist"
@@ -406,7 +448,8 @@ def test_block_layer_contract_is_classify_based_and_documented() -> None:
             f"UNRESOLVED: {options[sub]}"
         )
     assert "required=True" not in options["dim"], (
-        f"cli.py dim --layer must keep its observed default instead of becoming required: {options['dim']}"
+        "cli.py dim --layer must keep its observed default instead of becoming "
+        f"required: {options['dim']}"
     )
     assert "default=" in options["dim"], f"cli.py dim --layer must keep a default: {options['dim']}"
 
@@ -415,7 +458,9 @@ def test_block_layer_contract_is_classify_based_and_documented() -> None:
     assert re.search(r"CONVENTION_BLOCK_LAYERS.{0,80}8", combined, re.S) or re.search(
         r"8.{0,40}CONVENTION_BLOCK_LAYERS", combined, re.S
     ), "docs must state that CONVENTION_BLOCK_LAYERS holds 8 names"
-    assert re.search(r"classify_layer.{0,80}UNKNOWN|UNKNOWN.{0,80}classify_layer", combined, re.S), (
+    assert re.search(
+        r"classify_layer.{0,80}UNKNOWN|UNKNOWN.{0,80}classify_layer", combined, re.S
+    ), (
         "docs must state that the layer refusal is driven by classify_layer() returning UNKNOWN"
     )
 

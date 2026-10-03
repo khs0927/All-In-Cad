@@ -47,7 +47,6 @@ try:  # package-relative import (normal case)
         RunOptions,
         RunPlan,
         RunResult,
-        RunState,
         RunStateMachine,
         invocation_form_matches_command_kind,
         terminate_every_input,
@@ -60,7 +59,6 @@ except ImportError:  # pragma: no cover - flat execution fallback
         RunOptions,
         RunPlan,
         RunResult,
-        RunState,
         RunStateMachine,
         invocation_form_matches_command_kind,
         terminate_every_input,
@@ -551,7 +549,9 @@ def test_result_trace_is_readable() -> None:
     assert payload["terminal_state"] == "failed"
     assert payload["stop_state"] == "verifying"  # detected there, not in rolling_back
     assert "rolling_back" in payload["states_visited"]
-    assert [t[0] for t in payload["transitions"]] == ["T01", "T03", "T05", "T07", "T08", "T09", "T11", "T12"]
+    assert [t[0] for t in payload["transitions"]] == [
+        "T01", "T03", "T05", "T07", "T08", "T09", "T11", "T12",
+    ]
     assert payload["states_visited"][0] == "idle"
     assert payload["states_visited"][-1] == "failed"
     assert payload["entity_delta"] == 2
@@ -620,7 +620,7 @@ def test_t05_gate_predicate_keeps_its_own_contract_after_the_loop() -> None:
     # prompt of its own step.
     real_obs = machine._obs
     try:
-        for index, (predicate, own_prompt) in enumerate(gates):
+        for index, (predicate, _own_prompt) in enumerate(gates):
             for other, other_prompt in enumerate(prompts):
                 machine._obs = lambda p=other_prompt: {
                     "in_command": True,

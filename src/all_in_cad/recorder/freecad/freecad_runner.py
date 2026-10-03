@@ -92,9 +92,9 @@ import signal
 import subprocess
 import time
 import uuid
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Sequence
 
 # ---------------------------------------------------------------- markers ---
 # Kept for backwards compatibility and as an AUXILIARY signal only.
@@ -213,7 +213,9 @@ def write_verdict(
     half-written record.
     """
     if status not in (VERDICT_OK, VERDICT_FAILED):
-        raise ValueError(f"verdict status must be {VERDICT_OK!r}/{VERDICT_FAILED!r}, got {status!r}")
+        raise ValueError(
+            f"verdict status must be {VERDICT_OK!r}/{VERDICT_FAILED!r}, got {status!r}"
+        )
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     rec = {
@@ -461,7 +463,7 @@ def run_freecad_script(
     extra_args: Sequence[str] = (),
     env: dict | None = None,
     keep_prepared: bool = True,
-    popen: "PopenFactory | None" = None,
+    popen: PopenFactory | None = None,
     verdict_path: str | os.PathLike | None = None,
     run_token: str = "",
 ) -> FreeRunResult:

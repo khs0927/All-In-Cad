@@ -467,7 +467,7 @@ def write_wall(
     :data:`DXF_WRITE_VERSION` (AC1032, R2018). Missing layer table entries are
     created. Returns a :class:`WallRecord` describing exactly what was written.
     """
-    ezdxf = _require_ezdxf()
+    _require_ezdxf()
     # ezdxf reports Drawing.dxfversion as the AC code ("AC1032") and
     # Drawing.acad_release as the release name ("R2018"). Accept either form.
     doc_version = str(getattr(doc, "dxfversion", "") or "")

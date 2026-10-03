@@ -18,6 +18,7 @@ import ezdxf
 import pytest
 
 from all_in_cad.readback import DiffKind, diff_snapshots
+from all_in_cad.recorder.layer import layer_config_path
 from all_in_cad.recorder.opening import (
     DEFAULT_LAYERS,
     DEFAULT_OPENING_WIDTH_MM,
@@ -32,8 +33,6 @@ from all_in_cad.recorder.opening import (
     write_opening,
 )
 from all_in_cad.semantic_layers import LayerSemantic, classify_layer
-
-from all_in_cad.recorder.layer import layer_config_path
 
 
 def _layer_config() -> pathlib.Path:
@@ -58,7 +57,7 @@ VERTICAL = ((0, 0), (0, 12000))
 OBLIQUE = ((0, 0), (6000, 3000))
 
 
-def _new_doc() -> "ezdxf.document.Drawing":
+def _new_doc() -> ezdxf.document.Drawing:
     return ezdxf.new(DXF_VERSION, setup=True)
 
 
@@ -611,7 +610,9 @@ def test_write_readback_layers_match_the_slot_plan() -> None:
 def test_write_readback_coordinates_match_the_plan() -> None:
     doc = _new_doc()
     record = write_opening(doc, make_opening(HORIZONTAL, 2000))
-    by_role = dict(zip([spec.role for spec in record.geometry.entities], record.snapshots))
+    by_role = dict(
+        zip([spec.role for spec in record.geometry.entities], record.snapshots, strict=False)
+    )
     edge = by_role["edge_start"]
     assert edge.geometry["start"] == pytest.approx([0.0, -50.0])
     assert edge.geometry["end"] == pytest.approx([0.0, 50.0])

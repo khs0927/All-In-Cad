@@ -91,9 +91,10 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any
 
 from .machine import TERMINATOR
 from .transaction import (
@@ -274,7 +275,7 @@ class SessionRecord:
         )
 
     @staticmethod
-    def decode(raw: str) -> "SessionRecord | None":
+    def decode(raw: str) -> SessionRecord | None:
         parts = raw.split("|")
         if len(parts) != 9 or not parts[0].startswith("v"):
             return None
@@ -301,7 +302,6 @@ class SessionRecord:
 
 def read_session(doc: Any) -> SessionRecord | None:
     """Read the session record out of an open document (or ``None``)."""
-    from ezdxf.lldxf import tags  # noqa: PLC0415 - local import keeps ezdxf optional
 
     record = doc.rootdict.get(XRECORD_KEY)
     if record is None:
@@ -316,7 +316,6 @@ def read_session(doc: Any) -> SessionRecord | None:
 
 def write_session(doc: Any, session: SessionRecord | None) -> None:
     """Write or clear the session record inside ``doc``."""
-    from ezdxf.lldxf import tags  # noqa: PLC0415
 
     if session is None:
         if doc.rootdict.get(XRECORD_KEY) is not None:
@@ -900,7 +899,10 @@ MAPPING_NOTES: dict[str, str] = {
     ),
     "GV-04": "Unknown command token: absent from COMMANDS, so in_command never rises (RULE 2).",
     "GV-05": "_.ERASE is absent from COMMANDS on purpose, so the destructive run never starts.",
-    "GV-06": "After the first accepted point the session is still open, so an empty arg is genuinely busy.",
+    "GV-06": (
+        "After the first accepted point the session is still open, so an empty "
+        "arg is genuinely busy."
+    ),
     "GV-07": (
         "Delta mismatch is produced by an injected writer defect "
         "(extra_entity_per_arg), because a correct adapter cannot produce one."
@@ -914,8 +916,14 @@ MAPPING_NOTES: dict[str, str] = {
         "Run against a real host via the plan's arg budget (deadline_after_args). "
         "A wall-clock total deadline is also exercised separately."
     ),
-    "GV-11": "Transient counter 0 is a genuine failed read-back (ReadFault), not a scripted number.",
-    "GV-12": "Approval is decided before any host call, so this vector needs no CAD concept at all.",
+    "GV-11": (
+        "Transient counter 0 is a genuine failed read-back (ReadFault), not a "
+        "scripted number."
+    ),
+    "GV-12": (
+        "Approval is decided before any host call, so this vector needs no CAD "
+        "concept at all."
+    ),
     "GV-13": "(c:AIC_WALLSEG) stages render 'First corner: ' / 'Other corner: '.",
     "GV-14": "Terminator invariant is checked on the texts the adapter received.",
 }

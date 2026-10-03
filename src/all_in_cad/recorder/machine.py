@@ -34,10 +34,10 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 __all__ = [
     "TERMINATOR",
@@ -423,7 +423,7 @@ class RunStateMachine:
         # Cancel the running command first, then undo exactly once. The texts
         # are whatever the host declares -- the machine never hardcodes a
         # command token, so the same code drives any host's cancel/undo form.
-        for step, member, flag in (
+        for _step, member, flag in (
             (_CANCEL, "cancel", "cancel_called"),
             ("undo", "undo", "rollback_called"),
         ):

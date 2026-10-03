@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import ezdxf
+import pytest
 
 from all_in_cad.cli import main
 

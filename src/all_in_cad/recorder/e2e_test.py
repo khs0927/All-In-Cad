@@ -130,7 +130,6 @@ collected, same as cli_test.py::
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import os
@@ -151,7 +150,6 @@ from all_in_cad.recorder import transaction as txn_mod  # noqa: E402
 from all_in_cad.recorder.door import make_door_centered, write_door  # noqa: E402
 from all_in_cad.recorder.transaction import (  # noqa: E402
     ExternalModificationError,
-    TransactionError,
     VerificationFailed,
     begin,
     capture_state,

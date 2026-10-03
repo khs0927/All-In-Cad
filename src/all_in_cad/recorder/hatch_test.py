@@ -38,7 +38,6 @@ from all_in_cad.recorder.hatch import (  # noqa: E402
     HATCH_APPID,
     HATCH_LAYER_STATUS,
     KNOWN_HATCH_LAYERS,
-    MIN_AREA_MM2,
     UNRESOLVED_XRECORD_API,
     HatchPattern,
     HatchRole,
@@ -99,7 +98,9 @@ def test_concave_l_shape_area() -> None:
 
 
 def test_triangle_area() -> None:
-    hatch = make_hatch([(0.0, 0.0), (100.0, 0.0), (0.0, 100.0)], layer=TEST_LAYER, pattern_name="ANSI31")
+    hatch = make_hatch(
+        [(0.0, 0.0), (100.0, 0.0), (0.0, 100.0)], layer=TEST_LAYER, pattern_name="ANSI31"
+    )
     assert hatch.area_mm2() == pytest.approx(5000.0)
 
 
@@ -172,7 +173,11 @@ def test_closing_point_must_not_be_repeated() -> None:
 
 def test_non_finite_vertex_rejected() -> None:
     with pytest.raises(HatchValidationError, match="finite"):
-        make_hatch([(0.0, 0.0), (math.inf, 0.0), (100.0, 50.0)], layer=TEST_LAYER, pattern_name="ANSI31")
+        make_hatch(
+            [(0.0, 0.0), (math.inf, 0.0), (100.0, 50.0)],
+            layer=TEST_LAYER,
+            pattern_name="ANSI31",
+        )
 
 
 # --- self-intersection: rule is REJECT BY DEFAULT ---------------------------
@@ -381,7 +386,10 @@ def test_writes_r2018_and_rejects_other_versions() -> None:
     assert hatch_mod.DXF_WRITE_VERSION == "R2018"
     assert hatch_mod.DXF_MIN_READ_VERSION == "R2000"
     with pytest.raises(ValueError):
-        write_hatch(ezdxf.new("R2010"), make_hatch(_square(), layer=TEST_LAYER, pattern_name="ANSI31"))
+        write_hatch(
+            ezdxf.new("R2010"),
+            make_hatch(_square(), layer=TEST_LAYER, pattern_name="ANSI31"),
+        )
 
 
 def test_unresolved_xrecord_api_is_documented() -> None:

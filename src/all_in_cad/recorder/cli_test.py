@@ -1087,7 +1087,9 @@ def test_verify_still_fails_on_a_genuinely_unknown_layer_next_to_the_temp_ones(
     doc.modelspace().add_line((0, 0), (50, 50), dxfattribs={"layer": "ZZZ_MYSTERY"})
     mangled = tmp_path / "mystery.dxf"
     doc.saveas(mangled)
-    payload = run_json("verify", "--in", str(mangled), "--only", "opening", expect=EXIT_VERIFY_FAILED)
+    payload = run_json(
+        "verify", "--in", str(mangled), "--only", "opening", expect=EXIT_VERIFY_FAILED
+    )
     assert "layer_semantics_mapped" in payload["failed"]
     # ... while the documented TEMP- fallback alone is still only a warning.
     assert "opening_layer_mapping_unresolved" in payload["warnings"]
@@ -1327,7 +1329,9 @@ def test_verify_fails_when_the_indoor_face_contradicts_the_casement_sweep(
             entity.dxf.end = (2 * 3000 - e.x, e.y, e.z)
     mangled = tmp_path / "indoor_flip.dxf"
     doc.saveas(mangled)
-    payload = run_json("verify", "--in", str(mangled), "--only", "window", expect=EXIT_VERIFY_FAILED)
+    payload = run_json(
+        "verify", "--in", str(mangled), "--only", "window", expect=EXIT_VERIFY_FAILED
+    )
     assert "window_interior_side_agrees_with_casement_sweep" in payload["failed"]
 
 
@@ -1344,7 +1348,9 @@ def test_verify_fails_when_a_window_bar_leaves_the_centreline(tmp_path: Path) ->
             entity.dxf.end = (e.x + 60, e.y, e.z)
     mangled = tmp_path / "bars_off.dxf"
     doc.saveas(mangled)
-    payload = run_json("verify", "--in", str(mangled), "--only", "window", expect=EXIT_VERIFY_FAILED)
+    payload = run_json(
+        "verify", "--in", str(mangled), "--only", "window", expect=EXIT_VERIFY_FAILED
+    )
     assert "window_bars_centred_on_centreline" in payload["failed"]
 
 
@@ -1362,7 +1368,9 @@ def test_verify_fails_when_the_opening_boundary_stops_short_of_the_thickness(
             entity.dxf.end = (s.x, s.y + 50, s.z)
     mangled = tmp_path / "short2.dxf"
     doc.saveas(mangled)
-    payload = run_json("verify", "--in", str(mangled), "--only", "opening", expect=EXIT_VERIFY_FAILED)
+    payload = run_json(
+        "verify", "--in", str(mangled), "--only", "opening", expect=EXIT_VERIFY_FAILED
+    )
     assert "opening_boundary_crosses_wall_thickness" in payload["failed"]
 
 
@@ -1379,7 +1387,9 @@ def test_verify_fails_when_an_opening_tick_is_not_45_degrees(tmp_path: Path) -> 
                 entity.dxf.end = (e.x + 50, e.y, e.z)
     mangled = tmp_path / "tick2.dxf"
     doc.saveas(mangled)
-    payload = run_json("verify", "--in", str(mangled), "--only", "opening", expect=EXIT_VERIFY_FAILED)
+    payload = run_json(
+        "verify", "--in", str(mangled), "--only", "opening", expect=EXIT_VERIFY_FAILED
+    )
     assert "opening_ticks_are_45_degree" in payload["failed"]
 
 
@@ -1872,7 +1882,6 @@ def test_recover_pending_keeps_its_evidence_when_a_restore_fails(
     things that can fix the drawing. Deleting them made the second call report
     'nothing to do' while the drawing was still corrupt."""
     import hashlib
-    import shutil
 
     import ezdxf
 
@@ -1981,7 +1990,6 @@ def test_a_failing_cancel_is_not_reported_as_a_successful_rollback() -> None:
         FakeClock,
         FakeHost,
         build_plan,
-        run_vector,
     )
 
     # GV-11 read as an always-zero counter is a MEASURED rollback trigger:
@@ -2754,8 +2762,25 @@ def test_control_a_layer_table_entry_that_vanished_exits_one(tmp_path: Path) -> 
     "subcommand, bad",
     [
         # hatch: a ring needs three pairs, and the numbers must pair up
-        ("hatch", ["--boundary", "0", "0", "2000", "0", "--layer", "H", "--pattern-name", "ANSI31"]),
-        ("hatch", ["--boundary", "0", "0", "2000", "0", "2000", "--layer", "H", "--pattern-name", "ANSI31"]),
+        (
+            "hatch",
+            ["--boundary", "0", "0", "2000", "0", "--layer", "H", "--pattern-name", "ANSI31"],
+        ),
+        (
+            "hatch",
+            [
+                "--boundary",
+                "0",
+                "0",
+                "2000",
+                "0",
+                "2000",
+                "--layer",
+                "H",
+                "--pattern-name",
+                "ANSI31",
+            ],
+        ),
         # dim: coincident points have no direction
         ("dim", ["--p1", "0", "0", "--p2", "0", "0"]),
         # text: a non-positive height cannot be rendered

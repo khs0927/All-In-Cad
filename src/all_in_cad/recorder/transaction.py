@@ -74,7 +74,7 @@ import os
 import shutil
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -134,7 +134,14 @@ class ExternalModificationError(TransactionError):
     overwritten. This is the C-4 guard.
     """
 
-    def __init__(self, message: str, *, path: Path, expected: "FileState", found: "FileState") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        path: Path,
+        expected: FileState,
+        found: FileState,
+    ) -> None:
         super().__init__(message)
         self.path = path
         self.expected = expected
@@ -152,7 +159,7 @@ class VerificationFailed(TransactionError):
         message: str,
         *,
         report: Mapping[str, Any] | None = None,
-        original_error: "BaseException | None" = None,
+        original_error: BaseException | None = None,
     ) -> None:
         super().__init__(message)
         self.report = dict(report or {})
@@ -172,7 +179,7 @@ class RestoreUnverified(TransactionError):
         message: str,
         *,
         report: Mapping[str, Any] | None = None,
-        original_error: "BaseException | None" = None,
+        original_error: BaseException | None = None,
     ) -> None:
         super().__init__(message)
         self.report = dict(report or {})
@@ -300,7 +307,7 @@ class JournalTarget:
         }
 
     @staticmethod
-    def from_json(data: Mapping[str, Any], journal_path: Path) -> "JournalTarget":
+    def from_json(data: Mapping[str, Any], journal_path: Path) -> JournalTarget:
         before = data["before"]
         after = data.get("after")
         backup_name = data.get("backup")
@@ -627,7 +634,11 @@ class Txn:
         keep_journal_on_commit: bool = False,
     ) -> None:
         self.targets: tuple[JournalTarget, ...] = tuple(
-            JournalTarget(path=Path(item), before=FileState(Path(item), False, None, None), backup=None)
+            JournalTarget(
+                path=Path(item),
+                before=FileState(Path(item), False, None, None),
+                backup=None,
+            )
             for item in targets
         )
         if not self.targets:
@@ -673,7 +684,7 @@ class Txn:
         return self._default_verifier or generic_verifier
 
     # -- phase 1: capture ----------------------------------------------
-    def capture(self) -> "Txn":
+    def capture(self) -> Txn:
         """Copy every target's pre-state into the journal directory."""
         if self.state != "new":
             raise TransactionStateError(f"cannot capture in state {self.state!r}")
@@ -710,7 +721,7 @@ class Txn:
         self.target(path).handles = tuple(sorted({str(item).upper() for item in handles}))
 
     # -- phase 2: apply -------------------------------------------------
-    def apply(self, fn: Callable[["Txn"], Any], *, verify: bool = True) -> Any:
+    def apply(self, fn: Callable[[Txn], Any], *, verify: bool = True) -> Any:
         """Run ``fn`` (the recording) and then read the result back.
 
         If read-back verification fails the pre-state is restored before the
@@ -791,7 +802,7 @@ class Txn:
         return result
 
     # -- phase 3: the two endings ---------------------------------------
-    def commit(self) -> "Txn":
+    def commit(self) -> Txn:
         """Accept the recording. Idempotent after a successful commit."""
         if self.state == "committed":
             return self
@@ -807,7 +818,7 @@ class Txn:
         for backup in self.journal_dir.glob(f"{self.id}.*.bak"):
             backup.unlink(missing_ok=True)
 
-    def rollback(self) -> "Txn":
+    def rollback(self) -> Txn:
         """Restore the captured pre-state, then PROVE it by hash comparison.
 
         Refuses to run (and touches nothing) if a third party modified a
@@ -863,7 +874,7 @@ class Txn:
         return self
 
     # -- context manager -------------------------------------------------
-    def __enter__(self) -> "Txn":
+    def __enter__(self) -> Txn:
         if self.state == "new":
             self.capture()
         return self

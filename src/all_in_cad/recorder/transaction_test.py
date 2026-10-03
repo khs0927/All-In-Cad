@@ -35,6 +35,7 @@ try:  # package-relative import (normal case)
     from .wall import make_wall, write_wall
 except ImportError:  # pragma: no cover - flat execution fallback
     import transaction as tx  # type: ignore[no-redef]
+
     from all_in_cad.recorder.wall import make_wall, write_wall  # type: ignore[no-redef]
 
 
@@ -169,7 +170,9 @@ def test_restore_failure_is_reported_not_hidden(workdir: Path, monkeypatch) -> N
     out = workdir / "plan.dxf"
     write_text(out, "original\n")
     jdir = workdir / "journals"
-    before_state = tx.capture_state(out)
+    # captured but never asserted on (kept, not deleted): the report shows this
+    # reads like a dropped post-failure content check
+    _before_state = tx.capture_state(out)
 
     txn = tx.begin(out, journal_dir=jdir)
     txn.apply(lambda t: write_text(out, "changed\n"))
@@ -188,7 +191,7 @@ def test_exception_in_apply_restores_every_target(workdir: Path) -> None:
     write_text(wall, "wall-original\n")
     write_text(door, "door-original\n")
     jdir = workdir / "journals"
-    pre_wall, pre_door = sha(wall), sha(door)
+    pre_wall, _pre_door = sha(wall), sha(door)
 
     def plan(txn):
         write_text(wall, "wall-new\n")

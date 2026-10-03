@@ -36,7 +36,7 @@ GOAL_HINGE_X = 5550.0
 GOAL_LATCH_X = 6450.0
 
 
-def _new_doc() -> "ezdxf.document.Drawing":
+def _new_doc() -> ezdxf.document.Drawing:
     return ezdxf.new(DXF_VERSION, setup=True)
 
 

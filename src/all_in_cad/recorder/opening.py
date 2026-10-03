@@ -117,8 +117,9 @@ the file is written at the newer version on purpose.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 from ..readback import EntitySnapshot
 from ..topology import Point2D

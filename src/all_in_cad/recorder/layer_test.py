@@ -29,7 +29,6 @@ Run (PYTHONHOME must be cleared on this host, see layer.py module docstring)::
 from __future__ import annotations
 
 import dataclasses
-import json
 import sys
 from inspect import signature
 from pathlib import Path
@@ -44,7 +43,6 @@ import ezdxf  # noqa: E402
 
 from all_in_cad.recorder import layer as layer_mod  # noqa: E402
 from all_in_cad.recorder.layer import (  # noqa: E402
-    CONVENTION_LAYER_NAMES,
     DEFAULT_DXF_WRITE_VERSION,
     MANAGED_ATTRIBUTES,
     OBSERVED_XICAD_LAYERS,
@@ -52,19 +50,15 @@ from all_in_cad.recorder.layer import (  # noqa: E402
     LayerSpec,
     LayerValidationError,
     classify_layer,
-    convention_layer_specs,
     describe_layer,
     ensure_layer,
     layer_config_path,
     make_layer,
-    observed_layer_specs,
     observed_layer_specs_literal,
-    plan_layer_order,
     write_layer,
     write_layers,
 )
 from all_in_cad.semantic_layers import LayerSemantic  # noqa: E402
-
 
 # ------------------------------------------------------------------ fixtures
 

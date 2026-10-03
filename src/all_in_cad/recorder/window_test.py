@@ -18,6 +18,7 @@ import ezdxf
 import pytest
 
 from all_in_cad.readback import DiffKind, diff_snapshots
+from all_in_cad.recorder.layer import layer_config_path
 from all_in_cad.recorder.window import (
     DEFAULT_DIVISIONS,
     DEFAULT_LAYERS,
@@ -39,10 +40,8 @@ from all_in_cad.topology import Point2D
 def record_id(record) -> str:
     return record.document_id
 
-from all_in_cad.recorder.layer import layer_config_path
 
-
-def _layer_config() -> "pathlib.Path":
+def _layer_config() -> pathlib.Path:
     """The repo's layer table, or an explicit skip.
 
     This test asserts what ``configs/architectural-layers.json`` contains. The
@@ -60,7 +59,7 @@ def _layer_config() -> "pathlib.Path":
     return found
 
 
-def _new_doc() -> "ezdxf.document.Drawing":
+def _new_doc() -> ezdxf.document.Drawing:
     return ezdxf.new(DXF_VERSION, setup=True)
 
 
@@ -488,7 +487,9 @@ def test_write_readback_layers_match_the_slot_plan() -> None:
 def test_write_readback_coordinates_match_the_plan() -> None:
     doc = _new_doc()
     record = write_window(doc, make_window((0, 0), (1000, 0)))
-    by_role = dict(zip([spec.role for spec in record.geometry.entities], record.snapshots))
+    by_role = dict(
+        zip([spec.role for spec in record.geometry.entities], record.snapshots, strict=False)
+    )
     jamb = by_role["jamb_start"]
     assert jamb.geometry["start"] == pytest.approx([-750.0, -50.0])
     assert jamb.geometry["end"] == pytest.approx([-750.0, 50.0])
