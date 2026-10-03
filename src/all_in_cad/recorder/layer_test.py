@@ -28,6 +28,7 @@ Run (PYTHONHOME must be cleared on this host, see layer.py module docstring)::
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from inspect import signature
@@ -531,9 +532,22 @@ def test_a_document_of_another_dxf_version_is_refused():
 
 
 def test_layer_spec_is_immutable():
+    """``LayerSpec`` is a frozen dataclass: a write must be refused by the
+    dataclass machinery itself.
+
+    The oracle pins the exact type (``dataclasses.FrozenInstanceError``, an
+    ``AttributeError`` subclass) and the field-specific message. A bare
+    ``Exception`` here passed for any unrelated failure raised while setting
+    the attribute -- notably ``LayerValidationError`` from a stray
+    ``__setattr__`` hook, which would mean the spec validates on mutation
+    instead of refusing it outright. The post-condition asserts the value did
+    not change either, so a silently-ignored write cannot satisfy the test.
+    """
     spec = make_layer("WAL1", color=1)
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError) as excinfo:
         spec.color = 2  # type: ignore[misc]
+    assert "cannot assign to field 'color'" in str(excinfo.value)
+    assert spec.color == 1
 
 
 def test_renamed_keeps_every_attribute():

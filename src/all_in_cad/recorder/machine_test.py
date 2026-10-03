@@ -555,3 +555,87 @@ def test_result_trace_is_readable() -> None:
     assert payload["states_visited"][0] == "idle"
     assert payload["states_visited"][-1] == "failed"
     assert payload["entity_delta"] == 2
+
+
+def test_t05_gate_predicate_keeps_its_own_contract_after_the_loop() -> None:
+    """Each T05 prompt-gate predicate must stay bound to the contract of its own
+    step, not to whichever contract the loop happened to leave behind.
+
+    Two contracts are used (``First corner: `` / ``Other corner: ``) and each
+    prompt contains only one of them, so a predicate that reads the wrong
+    contract can only answer ``False``. The predicates are replayed *after* the
+    run, when a late-bound closure would already be pointing at the last
+    contract, so this pins the binding itself and not just the run outcome.
+    """
+    given = dict(VECTOR_BY_ID["GV-13"]["given"])
+    assert len(given["contract"]) == 2, "this test needs a two-contract plan"
+    host = FakeHost(given)
+    plan = build_plan(given)
+    clock = FakeClock()
+    machine = RunStateMachine(
+        host, plan, options=RunOptions(clock=clock, sleep=clock.sleep)
+    )
+
+    gates: list[tuple[object, str]] = []
+    real_wait = machine._wait_until
+    inside = {"draining": False}
+
+    def spy_wait(predicate, timeout_ms):
+        # only the T05 contract gate is of interest here; T08's
+        # ``not in_command`` wait also runs inside _drain_args, so the
+        # capture window stops at _wait_for_command_end.
+        if inside["draining"]:
+            gates.append((predicate, machine._obs()["prompt"]))
+        return real_wait(predicate, timeout_ms)
+
+    real_drain = machine._drain_args
+    real_end = machine._wait_for_command_end
+
+    def spy_drain():
+        inside["draining"] = True
+        try:
+            return real_drain()
+        finally:
+            inside["draining"] = False
+
+    def spy_end():
+        inside["draining"] = False
+        try:
+            return real_end()
+        finally:
+            inside["draining"] = False
+
+    machine._wait_until = spy_wait
+    machine._drain_args = spy_drain
+    machine._wait_for_command_end = spy_end
+    result = machine.run()
+
+    assert result.error_code is None, result.error_code
+    assert result.inputs_sent == [(given["command"]) + "\n", "0,0\n", "1000,0\n"]
+
+    prompts = [prompt for _predicate, prompt in gates]
+    assert prompts == ["First corner: ", "Other corner: "], prompts
+
+    # Replay each gate against every recorded prompt: it must accept only the
+    # prompt of its own step.
+    real_obs = machine._obs
+    try:
+        for index, (predicate, own_prompt) in enumerate(gates):
+            for other, other_prompt in enumerate(prompts):
+                machine._obs = lambda p=other_prompt: {
+                    "in_command": True,
+                    "prompt": p,
+                    "command_name": None,
+                }
+                got = predicate()
+                if other == index:
+                    assert got is True, (
+                        f"gate {index} rejected its own prompt {other_prompt!r} "
+                        f"(late binding read {prompts[-1]!r} instead)"
+                    )
+                else:
+                    assert got is False, (
+                        f"gate {index} accepted step {other}'s prompt {other_prompt!r}"
+                    )
+    finally:
+        machine._obs = real_obs

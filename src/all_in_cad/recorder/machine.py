@@ -622,9 +622,14 @@ class RunStateMachine:
                 )
 
             if contract:
-                # T05 -- guard prompt_matches_contract (substring, ordinal).
+                # T05 -- guard prompt_matches_contract (substring, ordinal). The
+                # contract is bound as a default argument rather than read late from
+                # the enclosing ``while``: ``_wait_until`` invokes this predicate
+                # synchronously before returning, so the live value would be correct
+                # anyway, and the binding only removes the dependence on that calling
+                # discipline (ruff B023).
                 if not self._wait_until(
-                    lambda: self._prompt_matches(self._obs()["prompt"], contract),
+                    lambda c=contract: self._prompt_matches(self._obs()["prompt"], c),
                     self._opt.prompt_gate_deadline_ms,
                 ):
                     return self._enter_rolling_back(
