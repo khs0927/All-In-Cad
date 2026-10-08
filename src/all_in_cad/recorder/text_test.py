@@ -574,8 +574,17 @@ def test_freecad_command_constant_matches_this_host():
         )
     # The binary name is the one thing that must hold on every host, with or
     # without FreeCAD installed: it is what identifies this as the console
-    # binary rather than the GUI executable.
-    assert FREECAD_COMMAND.name.lower() == "freecadcmd.exe"
+    # binary rather than the GUI executable. On POSIX, Path(r"D:\...").name
+    # is the whole string (backslash is not a separator), so use PureWindowsPath
+    # for drive-letter paths the same way as the absolute-shape check above.
+    command_text = str(FREECAD_COMMAND)
+    windows_shaped = len(command_text) >= 2 and command_text[1] == ":"
+    command_name = (
+        PureWindowsPath(command_text).name
+        if windows_shaped and not sys.platform.startswith("win")
+        else FREECAD_COMMAND.name
+    )
+    assert command_name.lower() == "freecadcmd.exe"
     # If the path does exist it must be the real file the probe will exec --
     # a directory named freecadcmd.exe would pass the checks above and still
     # make the subprocess call meaningless.
