@@ -1,15 +1,79 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <!--
+      The ported Plugin.cs uses System.Windows.Forms.Timer as a second pump for the
+      pipe-thread marshalling queue. Without UseWindowsForms the build stops at a single
+      CS0234 on that type and never binds the method bodies, which HIDES the real error
+      list - see the AicAcadSdkGuard target below.
+    -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <DefineConstants Condition="'$(ACAD2027_DIR)' != ''">$(DefineConstants);AIC_AUTOCAD_SDK</DefineConstants>
+    <RootNamespace>AllInCad.AutoCAD2027</RootNamespace>
+    <AssemblyName>AllInCad.AutoCAD2027</AssemblyName>
+    <Version>0.1.0</Version>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
-  <ItemGroup Condition="'$(ACAD2027_DIR)' != ''">
-    <Reference Include="AcCoreMgd"><HintPath>$(ACAD2027_DIR)\AcCoreMgd.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="AcDbMgd"><HintPath>$(ACAD2027_DIR)\AcDbMgd.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="AcMgd"><HintPath>$(ACAD2027_DIR)\AcMgd.dll</HintPath><Private>false</Private></Reference>
+
+  <!--
+    SDK location: D: by default (observed on this host), overridable with
+    -p:ACAD2027_DIR=... or the ACAD2027_DIR environment variable. There is no C: fallback:
+    if D: is not there the build must fail loudly rather than silently emit a stub DLL.
+  -->
+  <PropertyGroup>
+    <Acad2027DirDefault>D:\Program Files\AutoCAD 2027</Acad2027DirDefault>
+    <Acad2027Dir Condition="'$(ACAD2027_DIR)' != ''">$(ACAD2027_DIR)</Acad2027Dir>
+    <Acad2027Dir Condition="'$(Acad2027Dir)' == ''">$(Acad2027DirDefault)</Acad2027Dir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AicAcadSdkFound>false</AicAcadSdkFound>
+    <AicAcadSdkFound Condition="Exists('$(Acad2027Dir)\AcCoreMgd.dll') and Exists('$(Acad2027Dir)\AcDbMgd.dll') and Exists('$(Acad2027Dir)\AcMgd.dll')">true</AicAcadSdkFound>
+  </PropertyGroup>
+
+  <!--
+    FAIL CLOSED, LOUDLY. The previous revision defined AIC_AUTOCAD_SDK only when ACAD2027_DIR
+    was set, so a default `dotnet build` produced a stub DLL that compiled clean and could be
+    NETLOADed as a plugin that never binds to the real SDK. This Error target makes the cause
+    unmistakable in the build log and returns a non-zero exit code.
+  -->
+  <Target Name="AicAcadSdkGuard" BeforeTargets="BeforeCompile;CoreCompile">
+    <Error Condition="'$(AicAcadSdkFound)' != 'true'"
+           Text="All-In-Cad AutoCAD2027: AutoCAD 2027 managed SDK NOT FOUND. Looked for AcCoreMgd.dll + AcDbMgd.dll + AcMgd.dll under '$(Acad2027Dir)' (default '$(Acad2027DirDefault)'). This build is stopped on purpose: the alternative is a stub DLL that compiles cleanly but can never load into AutoCAD. Fix with -p:ACAD2027_DIR=&lt;AutoCAD 2027 install dir&gt;." />
+    <Message Importance="high"
+             Text="All-In-Cad AutoCAD2027: SDK found at '$(Acad2027Dir)' (AIC_AUTOCAD_SDK defined)."
+             Condition="'$(AicAcadSdkFound)' == 'true'" />
+  </Target>
+
+  <PropertyGroup Condition="'$(AicAcadSdkFound)' == 'true'">
+    <DefineConstants>$(DefineConstants);AIC_AUTOCAD_SDK</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\shared\AllInCad.NativeProtocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(AicAcadSdkFound)' == 'true'">
+    <Reference Include="AcCoreMgd">
+      <HintPath>$(Acad2027Dir)\AcCoreMgd.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcDbMgd">
+      <HintPath>$(Acad2027Dir)\AcDbMgd.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcMgd">
+      <HintPath>$(Acad2027Dir)\AcMgd.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
   </ItemGroup>
 </Project>

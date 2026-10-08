@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import ezdxf
+import pytest
 
 from all_in_cad.cli import main
 
@@ -102,12 +103,28 @@ def test_benchmark_command_emits_structured_report(tmp_path: Path, capsys) -> No
     assert len(payload["stages"]) == 3
 
 
-def test_verify_dwg_reports_missing_lanes_instead_of_crashing(tmp_path: Path, capsys) -> None:
+def test_verify_dwg_reports_missing_lanes_instead_of_crashing(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
     drawing = tmp_path / "sample.dxf"
     _write_fixture(drawing)
 
-    # With no acadsharp/oda/libredwg probes installed the host has fewer than
-    # two DWG lanes, so the CLI must report that cleanly and exit non-zero.
+    # The contract under test is "fewer than two DWG lanes is reported cleanly",
+    # so the premise is forced here rather than assumed from the host: a host
+    # with a built ACadSharp probe and ODA installed now has two real lanes, and
+    # the CLI correctly takes the comparison path instead.
+    import all_in_cad.cli as cli
+    from all_in_cad.extraction import ExtractionLane, ToolProbe
+
+    def _no_dwg_lanes(**_kwargs):
+        return {
+            lane: ToolProbe(lane=lane, available=False)
+            for lane in ExtractionLane
+            if lane is not ExtractionLane.EZDXF
+        } | {ExtractionLane.EZDXF: ToolProbe(lane=ExtractionLane.EZDXF, available=True)}
+
+    monkeypatch.setattr(cli, "detect_tool_probes", _no_dwg_lanes)
+
     assert main(["verify-dwg", "--source", str(drawing), "--workdir", str(tmp_path / "work")]) == 2
 
     captured = capsys.readouterr()
