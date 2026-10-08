@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -555,7 +555,19 @@ def test_freecad_command_constant_matches_this_host():
         # The fallback is this project's host default; assert the shape rather
         # than restating the literal, so the test cannot re-introduce a second
         # copy of a machine-specific path that could drift from text.py.
-        assert FREECAD_COMMAND.is_absolute(), (
+        # On Windows keep Path.is_absolute(); on POSIX a D:\... fallback is a
+        # relative PosixPath, so check shape with PureWindowsPath instead.
+        if sys.platform.startswith("win"):
+            is_absolute = FREECAD_COMMAND.is_absolute()
+        else:
+            command_text = str(FREECAD_COMMAND)
+            windows_shaped = len(command_text) >= 2 and command_text[1] == ":"
+            is_absolute = (
+                PureWindowsPath(command_text).is_absolute()
+                if windows_shaped
+                else FREECAD_COMMAND.is_absolute()
+            )
+        assert is_absolute, (
             "with "
             f"{text_mod.FREECAD_EXE_ENV} unset, FREECAD_COMMAND must fall back "
             f"to an absolute host default, got {FREECAD_COMMAND}"
