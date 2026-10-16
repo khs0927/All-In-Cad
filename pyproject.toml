@@ -19,6 +19,8 @@ all-in-cad = "all_in_cad.cli:main"
 dev = [
   "pytest>=8.3",
   "ruff>=0.8",
+  "mypy>=1.10",
+  "ezdxf>=1.4",
 ]
 headless = [
   "ezdxf>=1.4",
