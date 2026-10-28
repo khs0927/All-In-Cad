@@ -1,0 +1,277 @@
+{
+  "version": "1.0",
+  "spec_id": "all-in-cad.run_state_machine",
+  "authority": "이 명세가 정본이다. 호스트 구현(XicadRunner.cs, 이후의 다른 호스트)은 이 명세와 골든 벡터를 통과해야 하며, 구현이 명세보다 우선하지 않는다.",
+  "host_neutrality": {
+    "forbidden_terms": ["CMDACTIVE", "LASTPROMPT", "CMDNAMES", "ZWCAD", "AutoCAD", "SendStringToExecute", "Application.Idle", "ezdxf", "FreeCAD"],
+    "required_terms": {
+      "host_state": "호스트가 명령 수행 중인지 나타내는 불리언. 원문 호스트의 IsInCommand()/CMDACTIVE에 대응한다.",
+      "host_prompt": "호스트가 현재 입력 대기 프롬프트 문자열. 원문 호스트의 LASTPROMPT에 대응한다.",
+      "host_command_stack": "현재 중첩된 명령 이름 스택 문자열. 원문 호스트의 CMDNAMES에 대응한다."
+    }
+  },
+  "recording_lane": {
+    "primary": "ezdxf (Python)",
+    "verification_hosts": ["FreeCAD (사람이 여는 호스트)"],
+    "note": "FreeCAD는 실행 호스트가 아니다. 사람이 열고 검증에만 쓴다.",
+    "dxf_write_version": "R2018",
+    "dxf_write_ac_code": "AC1032",
+    "dxf_read_floor": "R2000",
+    "dxf_read_floor_ac_code": "AC1015",
+    "wall_and_door_representation": {
+      "rule": "벽과 문은 블록 INSERT 도 해칭도 쓰지 않고 LINE 과 ARC 조합으로만 표현한다.",
+      "basis_observed": "실제 CAD 에서 그려진 벽 9개 엔티티가 전부 LINE 이었다.",
+      "basis_decided": "노멀라이저가 INSERT 미전개 / HATCH 미지원이므로 블록과 해칭은 토폴로지 세그먼트에 0개로 기여한다. 따라서 노멀라이저 갭을 우회로 회피한다.",
+      "consequence": "정규화기에서 INSERT 전개나 HATCH 파싱을 새로 구현할 필요가 없으며, 없으면 안 된다."
+    }
+  },
+  "states": [
+    "idle",
+    "launching",
+    "awaiting_input",
+    "executing",
+    "verifying",
+    "committed",
+    "rolling_back",
+    "failed"
+  ],
+  "state_semantics": {
+    "idle": "실행 중인 작업 없음. 유일하게 사람이 개입하여 새 작업을 승인/거부하는 상태.",
+    "launching": "작업이 시작됨. 사전 스냅샷 캡처, 실행 기록 시작, 실행 문자열 1회 전송, 그리고 명령이 실제로 기동했는지 대기(settle).",
+    "awaiting_input": "명령이 수행 중(host_state=true)이고 인자를 하나씩 전송한다. 각 인자 전송 전 host_prompt이 계약 문자열과 일치하는지 확인한다.",
+    "executing": "모든 인자를 보냈고, 명령이 스스로 끝날 때까지 host_state가 false 가 되는 것을 대기.",
+    "verifying": "명령이 끝났고 엔티티 델타를 안정 판정으로 읽어 계약 범위와 대조한다.",
+    "committed": "검증 통과. 되돌릴 이유 없음.",
+    "rolling_back": "실패 후 되돌리기 판정 중. 명령이 실제로 시작되었는지가 선행 조건이다.",
+    "failed": "종료 상태. 결과 수신. 되돌리기 여부가 error_code와 함께 명시된다."
+  },
+  "transitions": [
+    {
+      "id": "T01",
+      "from": "idle",
+      "to": "launching",
+      "guard": "job_admissible",
+      "action": "CaptureBaseline: 사전 엔티티 수와 리비전을 기록한다. 실행 기록을 연다. 실행 문자열을 개행 종료자로 붙여 정확히 1회 전송한다.",
+      "on_failure": {"target_state": "failed", "error_code": "E_BUSY"},
+      "on_failure_note": "이미 실행 중인 작업이 있으면 launching 에 들어가지 않는다."
+    },
+    {
+      "id": "T02",
+      "from": "idle",
+      "to": "failed",
+      "guard": "destructive_requires_approval",
+      "action": "RejectUnapproved: 승인 토큰이 없거나 계획 다이제스트와 불일치하면 전송하지 않고 거부한다.",
+      "on_failure": {"target_state": "failed", "error_code": "E_APPROVAL_REQUIRED"},
+      "on_failure_note": "이 전이는 실행이 아니라 거부 경로다. 입력을 한 번도 보내지 않는다."
+    },
+    {
+      "id": "T03",
+      "from": "launching",
+      "to": "awaiting_input",
+      "guard": "command_started",
+      "action": "MarkCommandStarted: command_started 플래그를 true 로 세운다. 이 플래그는 되돌리기 게이트의 선행 조건이다.",
+      "on_failure": {"target_state": "rolling_back", "error_code": "E_TIMEOUT"},
+      "on_failure_note": "host_prompt 이 아예 없는 호스트에서는 이 전이가 진행 불가하므로 E_HOST_PROMPT_UNAVAILABLE 로 failed 에 직행한다. E_PROMPT_UNAVAILABLE 전이 규칙 참조."
+    },
+    {
+      "id": "T04",
+      "from": "launching",
+      "to": "rolling_back",
+      "guard": "start_settle_deadline_expired",
+      "action": "AbandonUnstarted: command_started 가 false 인 상태이므로 되돌리기 입력(UNDO)을 보내지 않고 실패 처리한다.",
+      "on_failure": {"target_state": "failed", "error_code": "E_COMMAND_NOT_STARTED"},
+      "on_failure_note": "이 경로에서는 rollback 이 발화하지 않는다. 명령이 시작되지 않았으므로 되돌리면 사용자 작업이 사라진다."
+    },
+    {
+      "id": "T05",
+      "from": "awaiting_input",
+      "to": "awaiting_input",
+      "guard": "prompt_matches_contract",
+      "action": "SendArg: host_prompt 이 해당 단계의 계약 문자열을 포함하면 인자 1개를 개행 종료자와 함께 전송하고 step 을 1 증가시킨다.",
+      "on_failure": {"target_state": "rolling_back", "error_code": "E_PROMPT_MISMATCH"},
+      "on_failure_note": "계약 불일치가 게이트 타임아웃까지 지속되면 이 실패 경로를 탄다. 호스트가 프롬프트 자체를 제공하지 않으면 E_PROMPT_UNAVAILABLE."
+    },
+    {
+      "id": "T06",
+      "from": "awaiting_input",
+      "to": "awaiting_input",
+      "guard": "no_bare_enter_when_idle",
+      "action": "SkipEmptyArg: 인자가 빈 문자열이고 host_state 가 false 이면 아무것도 보내지 않고 step 만 증가시킨다.",
+      "on_failure": {"target_state": "rolling_back", "error_code": "E_EMPTY_ARG_WHILE_BUSY"},
+      "on_failure_note": "host_state 가 true 인데 빈 인자면 보내지 말고 실패 처리한다. 유휴 상태의 빈 개행은 마지막 명령을 되살린다."
+    },
+    {
+      "id": "T07",
+      "from": "awaiting_input",
+      "to": "executing",
+      "guard": "all_args_sent",
+      "action": "DrainArgs: step 이 인자 개수에 도달했으므로 추가 입력을 보내지 않고 종료 대기로 넘어간다.",
+      "on_failure": {"target_state": "rolling_back", "error_code": "E_TIMEOUT"}
+    },
+    {
+      "id": "T08",
+      "from": "executing",
+      "to": "verifying",
+      "guard": "command_completed",
+      "action": "ReadAfter: host_state 가 false 이면 명령이 끝난 것으로 보고 사후 스냅샷 캡처를 시작한다.",
+      "on_failure": {"target_state": "rolling_back", "error_code": "E_COMMAND_STILL_ACTIVE"},
+      "on_failure_note": "인자를 다 보냈는데도 명령이 살아 있으면 종료 대기가 타임아웃되어 되돌린다."
+    },
+    {
+      "id": "T09",
+      "from": "verifying",
+      "to": "verifying",
+      "guard": "entity_count_stable",
+      "action": "RetryCount: 엔티티 카운터가 일시 0 을 반환하면 안정 판정을 재시도한다. 판정 전에는 델타를 계산하지 않는다.",
+      "on_failure": {"target_state": "rolling_back", "error_code": "E_COUNTER_UNSTABLE"},
+      "on_failure_note": "재시도 상한에 도달해도 안정되지 않으면 실패로 처리한다. 단, 이 시점의 0 은 실패 증거가 아니라 판정 불가이므로 실패는 verifying 단계를 끝낸 뒤 판정한다."
+    },
+    {
+      "id": "T10",
+      "from": "verifying",
+      "to": "committed",
+      "guard": "entity_delta_in_range",
+      "action": "Accept: 델타가 계약 범위 안이면 커밋한다. 되돌리기 경로를 열지 않는다.",
+      "on_failure": {"target_state": "rolling_back", "error_code": "E_DELTA_MISMATCH"}
+    },
+    {
+      "id": "T11",
+      "from": "verifying",
+      "to": "rolling_back",
+      "guard": "entity_delta_out_of_range",
+      "action": "Reject: 델타가 계약 범위 밖이면 되돌리기 판정으로 넘어간다.",
+      "on_failure": {"target_state": "failed", "error_code": "E_DELTA_MISMATCH"}
+    },
+    {
+      "id": "T12",
+      "from": "rolling_back",
+      "to": "failed",
+      "guard": "rollback_requires_started_command",
+      "action": "RollbackOrSkip: command_started 가 true 이면 명령 취소 후 되돌리기를 1회 발화한다. false 이면 아무 것도 보내지 않고 실패로 종료한다.",
+      "on_failure": {"target_state": "failed", "error_code": "E_ROLLBACK_FAILED"},
+      "on_failure_note": "되돌리기 자체가 실패해도 이미 실행된 사용자 작업을 추가로 망가뜨리지 않는다. 실패 보고만 한다."
+    },
+    {
+      "id": "T13",
+      "from": "launching",
+      "to": "failed",
+      "guard": "host_prompt_available",
+      "action": "AbortNoPrompt: 호스트가 프롬프트 신호를 전혀 제공하지 않으면 실행을 시작할 수 없으므로 즉시 실패한다.",
+      "on_failure": {"target_state": "failed", "error_code": "E_PROMPT_UNAVAILABLE"},
+      "on_failure_note": "이 경로에서도 command_started 는 false 이므로 되돌리기를 발화하지 않는다."
+    }
+  ],
+  "guards": {
+    "job_admissible": {
+      "description": "동시에 실행 중인 작업이 없고, 활성 문서가 있고, 총 마감 시각을 넘기지 않았다.",
+      "checks": ["no_running_job", "active_document_present", "within_total_deadline"],
+      "evidence": "observed"
+    },
+    "destructive_requires_approval": {
+      "description": "계획이 파괴적(삭제, 기존 엔티티 수정, 레이어 대상 변경)이고 유효한 승인 토큰이 없거나 토큰이 이 계획의 다이제스트와 불일치한다.",
+      "checks": ["plan_destructive", "approval_token_valid", "token_digest_matches_plan"],
+      "evidence": "observed",
+      "note": "승인은 launching 이전의 idle 에서만 받는다. 실행 중 승인을 뒤늦게 보충하는 것은 허용하지 않는다."
+    },
+    "command_started": {
+      "description": "전송한 실행 문자열에 대해 호스트가 host_state=true 로 진입했다.",
+      "checks": ["host_state == true"],
+      "settle_deadline_ms": 1500,
+      "evidence": "observed",
+      "note": "launching 에 머무는 동안 이 가드가 거짓이면 게이트 타임아웃이 되므로 어느 한 번은 관측되어야 한다. 관측되지 않으면 함정 1(개행 종료 누락) 또는 호출 형태 오류(함정 5)를 의심한다."
+    },
+    "prompt_matches_contract": {
+      "description": "현재 단계의 계약 문자열이 host_prompt 에 포함된다(부분 일치, 대소문자 구분). 계약이 빈 문자열이면 항상 참으로 두고 실제 프롬프트를 관측 기록만 한다.",
+      "match": "substring_ordinal",
+      "settle_deadline_ms": 2500,
+      "evidence": "observed"
+    },
+    "no_bare_enter_when_idle": {
+      "description": "인자가 빈 문자열일 때 host_state 가 false 면 절대 전송하지 않는다.",
+      "checks": ["arg_is_empty", "host_state == false", "do_not_send"],
+      "evidence": "observed",
+      "rationale": "유휴 프롬프트에서 빈 Enter 는 마지막 명령을 재실행한다. 실측으로 치수 명령이 되살아나 좌표를 가로챘다."
+    },
+    "all_args_sent": {
+      "description": "step >= 인자 개수.",
+      "checks": ["step >= len(args)"],
+      "evidence": "observed"
+    },
+    "command_completed": {
+      "description": "모든 인자를 보낸 뒤 host_state 가 false 로 내려갔다.",
+      "checks": ["host_state == false"],
+      "evidence": "observed"
+    },
+    "entity_count_stable": {
+      "description": "엔티티 카운터가 일시 0 을 반환하지 않는다. 안정 판정은 재시도 상한과 간격으로 정의한다.",
+      "retries": 3,
+      "retry_interval_ms": 120,
+      "unstable_value": 0,
+      "evidence": "observed",
+      "rationale": "엔티티 수 일시 읽기는 0 을 반환할 수 있다. 검증용 카운터는 안정 판정을 거쳐야 한다."
+    },
+    "entity_delta_in_range": {
+      "description": "after_count - before_count 가 계약된 최소/최대 델타 범위 안이다. 상한이 없으면 무한, 하한이 없으면 0.",
+      "checks": ["delta >= min_delta if given", "delta <= max_delta if given"],
+      "evidence": "observed"
+    },
+    "entity_delta_out_of_range": {
+      "description": "entity_delta_in_range 의 부정. 실측 델타와 기대 범위를 모두 결과에 남긴다.",
+      "evidence": "observed"
+    },
+    "start_settle_deadline_expired": {
+      "description": "launching 진입 후 settle 기한(1500ms) 동안 command_started 가 관측되지 않았다.",
+      "evidence": "observed"
+    },
+    "rollback_requires_started_command": {
+      "description": "되돌리기(UNDO) 발화의 유일한 선행 조건은 command_started == true. 이 플래그는 실행 문자열 전송이 아니라 host_state=true 관측으로만 세운다.",
+      "checks": ["command_started == true"],
+      "evidence": "observed",
+      "rationale": "명령이 시작되지 않았는데 되돌리기를 보내면 사용자 작업이 사라진다."
+    },
+    "host_prompt_available": {
+      "description": "호스트가 현재 프롬프트 신호를 읽을 수 있다. 신호를 아예 제공하지 않는 호스트(프롬프트 없음)는 계약 구동 실행을 지원하지 않는다.",
+      "evidence": "observed"
+    },
+    "terminate_every_input": {
+      "description": "호스트로 보내는 모든 텍스트 입력은 개행 종료자를 정확히 하나 붙인다. 두 전송이 합쳐지면 안 된다.",
+      "terminator_count": 1,
+      "evidence": "observed",
+      "rationale": "개행이 없으면 입력 버퍼에 쌓여 다음 전송이 뒤에 붙는다. 실측으로 _.LINE_.U 가 Unknown command 가 되었다."
+    },
+    "invocation_form_matches_command_kind": {
+      "description": "명령 종류에 맞는 호출 형태만 쓴다. 스크립트/매크로 형태의 접두는 스크립트 명령에만 유효하고, 네이티브 명령에 쓰면 실패한다.",
+      "native_form": "<globalized command token>",
+      "script_form": "(c:<name>)",
+      "evidence": "observed"
+    },
+    "schedule_is_not_focus_dependent": {
+      "description": "상태 전이를 구동하는 스케줄은 창 포커스나 OS 유휴 이벤트에 의존하지 않는다. 창이 포커스를 잃어도 진행되어야 한다.",
+      "evidence": "observed",
+      "rationale": "애플리케이션 유휴 이벤트는 창이 포커스를 잃으면 멈춘다. 실측으로 작업이 40초 정지 후 타임아웃이 났다. 포커스 의존 펌프는 이식 불가이므로 이식 대상 호스트는 자체 타이머 펌프를 구현해야 하며, 이 명세는 그 인터페이스만 규정한다."
+    }
+  },
+  "error_codes": [
+    {"code": "E_PROMPT_MISMATCH", "meaning": "기다린 뒤에도 host_prompt 이 해당 단계 계약 문자열과 일치하지 않는다.", "recoverable": true, "rollback": "required"},
+    {"code": "E_COMMAND_NOT_STARTED", "meaning": "실행 문자열을 보냈으나 기동 관측 없이 settle 기한이 만료되었다. 실행 문자열이 버퍼에 남았거나 호출 형태가 틀렸을 가능성이 높다.", "recoverable": true, "rollback": "forbidden", "rollback_note": "command_started 가 false 이므로 UNDO 를 보내지 않는다. 사용자 작업을 보호하기 위해 되돌리기를 의도적으로 생략한다."},
+    {"code": "E_PROMPT_UNAVAILABLE", "meaning": "호스트가 프롬프트 신호를 제공하지 않아 계약 구동 실행을 진행할 수 없다.", "recoverable": false, "rollback": "forbidden", "rollback_note": "command_started 가 false."},
+    {"code": "E_COMMAND_STILL_ACTIVE", "meaning": "모든 인자를 보냈는데도 명령이 host_state=true 로 남아 있다. 종료를 기다리다 기한이 만료되었다.", "recoverable": true, "rollback": "required"},
+    {"code": "E_DELTA_MISMATCH", "meaning": "엔티티 델타가 계약 범위 밖이다.", "recoverable": true, "rollback": "required"},
+    {"code": "E_COUNTER_UNSTABLE", "meaning": "엔티티 카운터가 안정 판정을 통과하지 못했다. 판정 불가이므로 델타 증거로 쓸 수 없다.", "recoverable": true, "rollback": "conditional", "rollback_note": "안정 판정 실패 자체는 델타 위반이 아니다. 안정 판정을 마친 뒤의 델타로 커밋/되돌리기를 결정한다."},
+    {"code": "E_EMPTY_ARG_WHILE_BUSY", "meaning": "명령이 수행 중인데 빈 인자를 보내려 했다. 보내지 않고 중단했다.", "recoverable": true, "rollback": "required"},
+    {"code": "E_APPROVAL_REQUIRED", "meaning": "파괴적 계획인데 유효한 승인 토큰이 없거나 다이제스트가 불일치한다. 아무 입력도 전송하지 않았다.", "recoverable": false, "rollback": "forbidden"},
+    {"code": "E_TIMEOUT", "meaning": "총 마감 시각을 넘겼다.", "recoverable": true, "rollback": "conditional", "rollback_note": "command_started 값에 따라 T12 가 되돌리기 발화 여부를 결정한다."},
+    {"code": "E_BUSY", "meaning": "이미 실행 중인 작업이 있다.", "recoverable": true, "rollback": "forbidden"},
+    {"code": "E_INVALID_INVOCATION", "meaning": "호출 형태가 명령 종류와 맞지 않는다. 네이티브 명령에 스크립트 접두를 쓰거나 그 반대인 경우.", "recoverable": true, "rollback": "forbidden"},
+    {"code": "E_NO_DOCUMENT", "meaning": "활성 문서가 없다.", "recoverable": true, "rollback": "forbidden"},
+    {"code": "E_ROLLBACK_FAILED", "meaning": "되돌리기 발화가 실패했다. 실패 사실만 보고하고 추가 입력을 보내지 않는다.", "recoverable": false, "rollback": "attempted"}
+  ],
+  "layer_mapping": {
+    "source": "configs/architectural-layers.json",
+    "wall": ["WAL1", "WAL2", "WAL3"],
+    "door": ["DOOR", "DOOR_ELE"],
+    "policy": {"unknown_layers": "preserve_and_flag", "never_delete_unknown": true},
+    "evidence": "observed"
+  },
+  "golden_vectors": "vectors/golden_vectors.json"
+}
