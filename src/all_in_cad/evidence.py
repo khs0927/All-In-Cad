@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .extraction_runtime import ExtractionRun
 from .models import VerificationReport
@@ -27,9 +27,11 @@ class EvidenceSourceSummary(BaseModel):
 
 
 class EvidenceManifest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=True, validate_by_name=True, validate_by_alias=True, serialize_by_alias=True
+    )
 
-    schema: str = "all-in-cad/evidence-manifest/v1"
+    schema_id: str = Field(default="all-in-cad/evidence-manifest/v1", alias="schema")
     document_id: str
     captured_at: str
     sources: tuple[EvidenceSourceSummary, ...]

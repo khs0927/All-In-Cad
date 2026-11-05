@@ -18,9 +18,11 @@ class BenchmarkStage(BaseModel):
 
 
 class BenchmarkResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=True, validate_by_name=True, validate_by_alias=True, serialize_by_alias=True
+    )
 
-    schema: str = "all-in-cad/benchmark/v1"
+    schema_id: str = Field(default="all-in-cad/benchmark/v1", alias="schema")
     workload: str
     requested_entities: int = Field(gt=0)
     extracted_entities: int = Field(ge=0)
