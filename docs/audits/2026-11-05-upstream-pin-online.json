@@ -1,0 +1,91 @@
+{
+  "online": true,
+  "project_count": 14,
+  "results": [
+    {
+      "latest": "83a4acaa4696fb7c2bffb3e15bbc659a83b8c172",
+      "pinned": "c04af1ff5ae36f0851ed928c3c3b0766cd36b71a",
+      "repo": "bimwright/dwg-mcp",
+      "status": "behind"
+    },
+    {
+      "latest": "1101a7d0deaffda02368a7a4dd972bb2282ed785",
+      "pinned": "8f102b2b06203d39fd8bf2fc966dbb7bce6bc45d",
+      "repo": "CEXT-Dan/PyRx",
+      "status": "behind"
+    },
+    {
+      "latest": "67be3ebb9507b0c8eae53d690fcd7c710fe22e25",
+      "pinned": "622a0e8b5f5769e17bc5bad4f7a47f958915658c",
+      "repo": "FsDiG/Fs.Fox.CAD",
+      "status": "behind"
+    },
+    {
+      "latest": "11f7c47e5038796a20451b38b23032e625b5aa26",
+      "pinned": "11f7c47e5038796a20451b38b23032e625b5aa26",
+      "repo": "beiming183-cloud/AutoCAD-MCP",
+      "status": "current"
+    },
+    {
+      "latest": "e02b6120f4ef5fd2f3f101702cdb73f6c3e2d7a8",
+      "pinned": "0801ade2260195a5399fa5027ee925b72fc3e259",
+      "repo": "LokmenoWer/best-cad-mcp",
+      "status": "behind"
+    },
+    {
+      "latest": "3215dc0b0b706e5b280798e00bf8b512dbb9cfbc",
+      "pinned": "0866c8e8a5bc8c4f820d4b074bcc09c34d9c85be",
+      "repo": "jeremylongshore/cad-ai-agent",
+      "status": "behind"
+    },
+    {
+      "latest": "49883a983e665900bbc37b9f200daf99144818e1",
+      "pinned": "49883a983e665900bbc37b9f200daf99144818e1",
+      "repo": "dalingo81/ZWCAD-MCP",
+      "status": "current"
+    },
+    {
+      "latest": "c498560bb491c357deda538360ed0c8fdb11f5a7",
+      "pinned": "d6f2ac10caeddc712ed1824aaeb3b9c050de4a04",
+      "repo": "mozman/ezdxf",
+      "status": "behind"
+    },
+    {
+      "latest": "d9f3de8c9910b602d392aa1acc72b62c095ec40e",
+      "pinned": "3feabba4b2cbcb226f10b288aaee32442b03af6f",
+      "repo": "DomCR/ACadSharp",
+      "status": "behind"
+    },
+    {
+      "latest": "5bdce514f0504ad3a6e7c8a9e001236a39d8b67f",
+      "pinned": "34f02f54b9aacb5708c1d3d2070efb3e4b2d8c43",
+      "repo": "LibreDWG/libredwg",
+      "status": "behind"
+    },
+    {
+      "latest": "58a05ddfc34a9832c626e82cd88ecdce8e16a62a",
+      "pinned": "abc2a82e7128358b9e228a7d9442b37019aa3fe5",
+      "repo": "U-C4N/Autocad-MCP",
+      "status": "behind"
+    },
+    {
+      "latest": "d724ee4cbc49dffc0f51f61608d02dbc5e1ed3a8",
+      "pinned": "360ec77c970ec95a962bd4d0a3238715ee78dd7c",
+      "repo": "AnCode666/multiCAD-mcp",
+      "status": "behind"
+    },
+    {
+      "latest": "5a7ced7589b19df39a52f53d2d2f41948e0db29a",
+      "pinned": "95476a33a1c246308326eb4709d6379ef2efdbc1",
+      "repo": "puran-water/autocad-mcp",
+      "status": "behind"
+    },
+    {
+      "latest": "454c80416c01338048515dd18cfc1d82d9742d4b",
+      "pinned": "454c80416c01338048515dd18cfc1d82d9742d4b",
+      "repo": "Psalmustrack/lambdacad-mcp",
+      "status": "current"
+    }
+  ],
+  "reviewed_at": "2026-09-16"
+}

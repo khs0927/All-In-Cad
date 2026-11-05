@@ -17,7 +17,7 @@ These items require the Windows CAD host and are intentionally not simulated in 
 
 - [ ] AutoCAD 2027: enable Autodesk Assistant Tech Preview and verify official MCP endpoint.
 - [ ] AutoCAD 2027: install/test `bimwright/dwg-mcp` 2027 shell.
-- [ ] AutoCAD 2027: load All-In-Cad .NET 10 plugin and pass Named Pipe ping/context tests.
+- [x] AutoCAD 2027: load All-In-Cad .NET 10 plugin and pass Named Pipe ping/context tests.
 - [ ] AutoCAD 2027: load PyRx 26.0 and run the common capability matrix.
 - [ ] ZWCAD 2026: load PyRx ZRX loader and run the same capability matrix.
 - [ ] ZWCAD 2026: resolve installed ZRX.NET assemblies and compile/load the native adapter.
@@ -36,7 +36,7 @@ Host-independent work is completed first; CAD-specific execution remains live-ho
 - [x] create/move/copy/rotate/scale/offset/erase operation contracts.
 - [x] layer/block/text/dimension operation contracts.
 - [x] normalized native snapshot and requested/actual diff model.
-- [ ] Bind shared Named Pipe worker to AutoCAD 2027 document/database APIs.
+- [x] Bind shared Named Pipe worker to AutoCAD 2027 document/database APIs.
 - [ ] Bind shared Named Pipe worker to ZWCAD 2026 ZRX.NET APIs.
 - [ ] Execute v1 primitives in real native transactions on both hosts.
 - [ ] Capture native post-commit readback from both hosts.

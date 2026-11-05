@@ -83,3 +83,41 @@ all-in-cad doctor   # ezdxf DETECTED, acadsharp/libredwg/oda NOT_DETECTED, 모�
 - 실제 `Z:\` 도면 트리 인벤토리, 실도면 기반 정밀도/재현율 측정.
 - `doctor.ps1` 변경은 PowerShell 이 없어 이 컨테이너에서 실행하지 못함 → Windows 에서 `scripts/windows/doctor.ps1` 1회 실행 확인 필요.
 - upstream pin online 감사 (GitHub API 접근 가능한 환경/CI).
+
+## Local Windows run (2026-11-05)
+
+호스트: `DESKTOP-CMFD3O8`, Windows 10, AutoCAD 2027(26.0.0.0, PID 82684, 빈 `Drawing1.dwg`), .NET SDK 10.0.403(프로세스 환경변수 `DOTNET_ROOT`만 사용).
+
+### 결과
+
+| 항목 | 명령 | 결과 |
+|---|---|---|
+| doctor | `scripts/windows/doctor.ps1` | exit 0. `DOTNET_ROOT` 없으면 .NET SDK `False`, 있으면 `True`(10.0.403). 탐지 순서 동작 확인. `-Strict` 는 수정 전 3건 실패로 종료(ZWCAD, ODA, ACadSharp probe) |
+| doctor ODA 오탐 | 같은 스크립트 | 이 PC는 `ProgramFiles=E:\Program files` 인데 ODA는 `C:\Program Files\ODA` 에 있어 못 찾음. `doctor.ps1`, `tool_probes.odafc_search_roots` 에 `SystemDrive` 루트 추가 후 둘 다 `ODAFileConverter 27.1.0` 탐지 |
+| upstream pin 온라인 감사 | `python scripts/upstream/check_pins.py --online --json-output ...` | exit 0. 14개 pin 모두 upstream 에 존재. current 3, behind 11. 결과: `docs/audits/2026-11-05-upstream-pin-online.json`. pin 은 올리지 않음 |
+| 플러그인 빌드 | `dotnet build native/autocad2027/AllInCad.AutoCAD2027.csproj -c Release -p:ACAD2027_DIR="C:\Program Files\Autodesk\AutoCAD 2027"` | 수정 전 실패, 수정 후 오류 0, 경고 3(WindowsBase 버전 충돌 MSB3277, 로드에는 영향 없었음) |
+| 플러그인 로드 | 빈 세션에서 `(command "_.NETLOAD" "<scratch>/AllInCad.AutoCAD2027.dll")` | `Initialize ok`, `\\.\pipe\all-in-cad-acad-82684` 생성. `SECURELOAD=0` 이라 보안 프롬프트 없음 |
+| Named Pipe | framing 스모크 클라이언트(`aic.native/1`) | `system.ping` pong, `host.context`(`host=autocad2027`, `sdk_bound=true`, 문서 revision/개수), `host.capabilities` 통과. `plan.execute` → `E_METHOD_NOT_FOUND`, `aic.native/2` → `E_PROTOCOL` |
+| 네이티브 트랜잭션 | `host.draw_line` (0,0)→(1234.5,678.9) | handle `1F75`, 개체 0→1, revision 8053→8054 |
+| 독립 readback | power-cad `cad_get`, `cad_snapshot` | `LINE`, 시작/끝점 일치, 길이 1408.86318. 화면 확인 |
+| 정리 | power-cad `cad_delete` dry_run → 실행 | 개체 0개 복귀(power-cad, pipe 양쪽 확인) |
+| Python | `ruff check src tests scripts ci`, `pytest tests`, `pytest src/all_in_cad/recorder` (Windows, CPython 3.12) | ruff 통과, core 117 passed, recorder 844 passed / 4 skipped (12분 15초) |
+
+### 코드 수정
+
+- `native/autocad2027` 은 #17 이후 한 번도 빌드될 수 없는 상태였다. `Plugin.cs` 가 쓰는 `PipeNames`, `WorkerDescriptor`, `WorkerDescriptorStore`, Newtonsoft 기반 요청 타입이 저장소에 없고 Newtonsoft 참조도 없었다.
+  `HostProtocol.cs` 를 추가해 핸들러 코드를 그대로 두고 커밋된 `native/shared` 서버 위에 올렸다.
+- 호스트 식별값이 `zwcad2026` / `ZWCAD` 로 나가던 것을 `autocad2027` / `AutoCAD` 로 수정. `document_id` 접두사도 `autocad:`.
+- `host.context` 와 `SnapshotModel` 이 pipe 스레드에서 DB 를 읽던 것을 애플리케이션 스레드로 옮김.
+- `AIC_AUTOCAD_SESSION_TOKEN` 이 설정되어 있으면 세션 토큰을 요구.
+
+### 남은 항목
+
+- `plan.execute`, `entity.read`, `document.snapshot`, `verification.capture` 는 미구현. 승인 토큰, 쓰기 lease, 멱등 키 없이 `host.draw_line`, `host.send_command` 가 열려 있어 `AGENTS.md` 규칙 2, 3 을 아직 충족하지 못한다. 그래서 ROADMAP 의 "Execute v1 primitives", "Capture native post-commit readback" 은 체크하지 않았다(이번 증거는 LINE 1종).
+- revision 이 Handseed 값이라 삭제 후에도 8054 그대로였다. 생성만 반영하므로 `expected_revision` 충돌 검사로 쓸 수 없다. `document_id` 도 이름 기반이다.
+- `host.send_command`, `xicad.*` 는 실행하지 않음. XiCAD 는 이 AutoCAD 에 로드되어 있지 않다.
+- Autodesk Assistant MCP, `bimwright/dwg-mcp` 2027 shell, PyRx 26.0 매트릭스: 설치가 필요해 실행하지 않음.
+- ZWCAD 2026 전체: ZWCAD 미설치, 프로세스 없음.
+- `Z:\` 인벤토리와 실도면 정밀도/재현율: 이 PC에 `Z:` 드라이브 없음(C, D, E, G 만 존재).
+- `native/autocad2027` 빌드는 CI 에 없다(AutoCAD SDK 필요). `acaddoc.autoload.lsp` 의 경로는 다른 PC 기준이고 실행하지 않음.
+- 시험 빌드는 언로드할 수 없어 AutoCAD 를 닫을 때까지 PID 82684 에 로드된 채 pipe 를 연다. 영구 설치는 없음. 로그와 descriptor 는 `%LOCALAPPDATA%\All-In-Cad` 에 남고 descriptor 는 종료 시 삭제된다.
