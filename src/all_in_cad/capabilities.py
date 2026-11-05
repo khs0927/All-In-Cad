@@ -43,12 +43,14 @@ class CapabilityEntry(BaseModel):
 
 
 class CapabilityReport(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=True, validate_by_name=True, validate_by_alias=True, serialize_by_alias=True
+    )
 
     adapter: str
     host: str
     host_version: str | None = None
-    schema: str = "all-in-cad/capability-report/v1"
+    schema_id: str = Field(default="all-in-cad/capability-report/v1", alias="schema")
     source_schema: str | None = None
     entries: tuple[CapabilityEntry, ...] = ()
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -178,18 +180,11 @@ def build_capability_matrix(reports: list[CapabilityReport]) -> CapabilityMatrix
     if len(set(columns)) != len(columns):
         raise ValueError("capability reports must have unique adapter/host keys")
 
-    capabilities = sorted(
-        {
-            entry.capability
-            for report in reports
-            for entry in report.entries
-        }
-    )
+    capabilities = sorted({entry.capability for report in reports for entry in report.entries})
     rows: list[CapabilityMatrixRow] = []
     for capability in capabilities:
         states = {
-            key: report.state(capability)
-            for key, report in zip(columns, reports, strict=True)
+            key: report.state(capability) for key, report in zip(columns, reports, strict=True)
         }
         rows.append(
             CapabilityMatrixRow(

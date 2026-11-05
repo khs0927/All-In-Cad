@@ -25,9 +25,17 @@ class AdapterChannel(StrEnum):
 class SourceBindingRef(BaseModel):
     """Cross-repository provenance from Ontology SOURCE_BOUND to a native CAD executor."""
 
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(
+        frozen=True,
+        extra="allow",
+        validate_by_name=True,
+        validate_by_alias=True,
+        serialize_by_alias=True,
+    )
 
-    schema: Literal["aec-executor-handoff/1"] = "aec-executor-handoff/1"
+    schema_id: Literal["aec-executor-handoff/1"] = Field(
+        default="aec-executor-handoff/1", alias="schema"
+    )
     binding_state: Literal["SOURCE_BOUND"] = "SOURCE_BOUND"
     review_status: Literal["VERIFIED_FOR_REVIEW"] = "VERIFIED_FOR_REVIEW"
     document_id: str = Field(min_length=1)
@@ -44,9 +52,17 @@ class SourceBindingRef(BaseModel):
 class DrawingGrammarRef(BaseModel):
     """Read-only local drafting grammar sampled from an existing CAD drawing."""
 
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(
+        frozen=True,
+        extra="allow",
+        validate_by_name=True,
+        validate_by_alias=True,
+        serialize_by_alias=True,
+    )
 
-    schema: Literal["cad-drawing-grammar/1"] = "cad-drawing-grammar/1"
+    schema_id: Literal["cad-drawing-grammar/1"] = Field(
+        default="cad-drawing-grammar/1", alias="schema"
+    )
     document: dict[str, Any] = Field(default_factory=dict)
     anchor: dict[str, Any] = Field(default_factory=dict)
     recommended_generation_style: dict[str, Any] = Field(default_factory=dict)
@@ -60,9 +76,7 @@ class DrawingGrammarRef(BaseModel):
     def validate_evidence(self) -> DrawingGrammarRef:
         sample_digest = self.evidence.get("sample_digest")
         nearby_count = self.evidence.get("nearby_entity_count")
-        if not isinstance(sample_digest, str) or not re.fullmatch(
-            r"[0-9a-f]{64}", sample_digest
-        ):
+        if not isinstance(sample_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", sample_digest):
             raise ValueError("drawing grammar evidence.sample_digest must be SHA-256")
         if not isinstance(nearby_count, int) or nearby_count < 0:
             raise ValueError("drawing grammar evidence.nearby_entity_count must be >= 0")

@@ -147,7 +147,7 @@ def test_change_plan_can_carry_non_authorizing_drawing_grammar() -> None:
         drawing_grammar=_drawing_grammar(),
     )
     assert plan.drawing_grammar is not None
-    assert plan.drawing_grammar.schema == "cad-drawing-grammar/1"
+    assert plan.drawing_grammar.schema_id == "cad-drawing-grammar/1"
     assert plan.drawing_grammar.execution_authorized is False
     assert plan.drawing_grammar.may_execute_mutation is False
     assert plan.drawing_grammar.recommended_generation_style["layer"] == "A-WALL"
