@@ -36,6 +36,7 @@ namespace AllInCad.AutoCAD2027
         internal static string? DescriptorPath { get; private set; }
         internal static string SessionId { get; private set; } = Guid.NewGuid().ToString("N");
         internal static string? LastPipeName { get; private set; }
+        private static int ApplicationThreadId;
 
         static Plugin()
         {
@@ -122,11 +123,15 @@ namespace AllInCad.AutoCAD2027
 
                 SessionId = Guid.NewGuid().ToString("N");
                 int pid = Process.GetCurrentProcess().Id;
-                string pipeName = PipeNames.ResolveZwcad2026(pid);
+                ApplicationThreadId = Environment.CurrentManagedThreadId;
+                string pipeName = PipeNames.ResolveAutoCad2027(pid);
                 LastPipeName = pipeName;
                 WriteBootLog("pipeName=" + pipeName + " pid=" + pid);
 
-                Server = new CurrentUserPipeServer(pipeName, DispatchAsync);
+                Server = new CurrentUserPipeServer(
+                    pipeName,
+                    DispatchAsync,
+                    Environment.GetEnvironmentVariable(PipeNames.SessionTokenVariable));
                 Server.Start();
                 EnsureIdleHook();
                 WriteBootLog("pipe server started sdk=" + HostCapabilities.SdkBound);
@@ -137,7 +142,7 @@ namespace AllInCad.AutoCAD2027
                         new WorkerDescriptor
                         {
                             Protocol = ProtocolConstants.Version,
-                            Host = "zwcad2026",
+                            Host = "autocad2027",
                             PipeName = pipeName,
                             ProcessId = pid,
                             SessionId = SessionId,
@@ -260,7 +265,8 @@ namespace AllInCad.AutoCAD2027
                 case "system.ping":
                     return Task.FromResult(HandlePing(request));
                 case "host.context":
-                    return Task.FromResult(HandleHostContext(request));
+                    // Reads the database, which is only safe on the application thread.
+                    return Task.FromResult(RunOnIdleWrapped(request, () => HandleHostContext(request)));
                 case "host.capabilities":
                     return Task.FromResult(HandleCapabilities(request));
                 case "host.send_command":
@@ -304,7 +310,7 @@ namespace AllInCad.AutoCAD2027
                 {
                     pong = true,
                     protocol = ProtocolConstants.Version,
-                    host = "zwcad2026",
+                    host = "autocad2027",
                     pipe_name = LastPipeName,
                     process_id = Process.GetCurrentProcess().Id,
                     session_id = SessionId,
@@ -320,7 +326,7 @@ namespace AllInCad.AutoCAD2027
                 request.RequestId,
                 new
                 {
-                    host = "zwcad2026",
+                    host = "autocad2027",
                     protocol = ProtocolConstants.Version,
                     sdk_bound = HostCapabilities.SdkBound,
                     capabilities = HostCapabilities.All,
@@ -351,8 +357,8 @@ namespace AllInCad.AutoCAD2027
                     request.RequestId,
                     new
                     {
-                        host = "zwcad2026",
-                        host_product = "ZWCAD",
+                        host = "autocad2027",
+                        host_product = "AutoCAD",
                         host_version = zwVersion?.ToString(),
                         protocol = ProtocolConstants.Version,
                         session_id = SessionId,
@@ -383,8 +389,8 @@ namespace AllInCad.AutoCAD2027
                 request.RequestId,
                 new
                 {
-                    host = "zwcad2026",
-                    host_product = "ZWCAD",
+                    host = "autocad2027",
+                    host_product = "AutoCAD",
                     host_version = (string?)null,
                     protocol = ProtocolConstants.Version,
                     session_id = SessionId,
@@ -421,7 +427,7 @@ namespace AllInCad.AutoCAD2027
                 object? version = db.GetType().GetProperty("VersionGuid")?.GetValue(db);
                 if (fingerprint is Guid fg && version is Guid vg)
                 {
-                    return string.Format("zwcad:{0:N}:{1:N}", fg, vg);
+                    return string.Format("autocad:{0:N}:{1:N}", fg, vg);
                 }
             }
             catch
@@ -429,7 +435,7 @@ namespace AllInCad.AutoCAD2027
             }
 
             string name = doc.Name;
-            return string.IsNullOrWhiteSpace(name) ? "zwcad:untitled" : "zwcad:" + name;
+            return string.IsNullOrWhiteSpace(name) ? "autocad:untitled" : "autocad:" + name;
         }
 
         private static long ReadRevision(Document doc)
@@ -946,6 +952,18 @@ namespace AllInCad.AutoCAD2027
         }
 
         private static ModelSnapshot SnapshotModel()
+        {
+            if (Environment.CurrentManagedThreadId == ApplicationThreadId)
+            {
+                return SnapshotModelOnApplicationThread();
+            }
+
+            ModelSnapshot? snapshot = null;
+            RunOnIdle(() => snapshot = SnapshotModelOnApplicationThread());
+            return snapshot!;
+        }
+
+        private static ModelSnapshot SnapshotModelOnApplicationThread()
         {
             Document? doc = ZwApplication.DocumentManager.MdiActiveDocument;
             if (doc is null)
