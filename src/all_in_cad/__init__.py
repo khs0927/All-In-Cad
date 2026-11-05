@@ -1,6 +1,5 @@
 """All-In-Cad core contracts."""
 
-from . import _warnings  # noqa: F401  (must run before the models are defined)
 from .approval import ApprovalError, ApprovalSigner, plan_digest
 from .architecture import (
     AnnotationBinding,

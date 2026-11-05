@@ -22,6 +22,8 @@ Windows CAD 호스트·.NET SDK·자격증명이 필요한 항목은 실행하�
 2. `feat(doctor):` .NET SDK 탐지 강화 (codex 브랜치 f664ee9 의 일부 이식).
 3. `fix:` 모든 CLI 실행마다 출력되던 pydantic `Field name "schema" ... shadows an attribute` UserWarning 5건을
    `all_in_cad` 패키지 범위로만 정확히 필터링 (`src/all_in_cad/_warnings.py`). 필드명 `schema` 는 저장 포맷의 일부라 유지.
+   → **대체됨:** main 에 병합된 `khs0927/All-In-Cad#19` 가 필드 alias 로 근본 원인을 고쳐, 필터는 제거함
+   (`python -W error::UserWarning -c "import all_in_cad"` 통과).
 4. `ci:` `core-ci`, `dxf-recorder-ci` 가 `claude/**` push 에서도 실행되도록 트리거 추가.
 
 ## Upgrades
