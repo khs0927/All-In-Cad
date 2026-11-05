@@ -29,6 +29,10 @@ native/shared/obj/
 native/autocad2027/bin/
 native/autocad2027/obj/
 
+# Repository-local .NET SDK installs (detected by scripts/windows/doctor.ps1)
+.dotnet/
+.dotnet-home/
+
 # CI run output (junit reports); the gate reads them, they are not source
 ci-reports/
 
