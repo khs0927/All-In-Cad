@@ -63,10 +63,12 @@ Add-Check ".NET SDK" $dotnetOk $dotnetDetail
 
 # ODA installs into a version-stamped directory, so no version literal may appear
 # here: any "ODAFileConverter*" directory under an ODA install root matches, newest first.
+# ProgramFiles can be redirected to another drive while installers still use the system drive.
 $odaExeName = "ODAFileConverter.exe"
 $odaRoots = @(
-  $env:ProgramFiles, $env:ProgramW6432, ${env:ProgramFiles(x86)}
-) | Where-Object { $_ } | ForEach-Object { Join-Path $_ "ODA" } | Where-Object { Test-Path $_ }
+  $env:ProgramFiles, $env:ProgramW6432, ${env:ProgramFiles(x86)},
+  $(if ($env:SystemDrive) { "$($env:SystemDrive)\Program Files" })
+) | Where-Object { $_ } | ForEach-Object { Join-Path $_ "ODA" } | Where-Object { Test-Path $_ } | Select-Object -Unique
 $oda = @(
   Get-ChildItem -Path $odaRoots -Filter "ODAFileConverter*" -Directory -ErrorAction SilentlyContinue |
     ForEach-Object { Get-Item (Join-Path $_.FullName $odaExeName) -ErrorAction SilentlyContinue }

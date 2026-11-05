@@ -117,7 +117,11 @@ def odafc_search_roots() -> tuple[Path, ...]:
         base = os.environ.get(var)
         if base:
             roots.append(Path(base) / "ODA")
-    return tuple(roots)
+    # ProgramFiles can be redirected to another drive while installers still use the system drive.
+    system_drive = os.environ.get("SystemDrive")
+    if system_drive:
+        roots.append(Path(f"{system_drive}\\") / "Program Files" / "ODA")
+    return tuple(dict.fromkeys(roots))
 
 
 def discover_external_tool(
