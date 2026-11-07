@@ -2,7 +2,7 @@ name: dxf-recorder-ci
 
 on:
   push:
-    branches: ["main", "agent/**"]
+    branches: ["main", "agent/**", "claude/**"]
   pull_request:
 
 permissions:

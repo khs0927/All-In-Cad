@@ -1,0 +1,123 @@
+# Cloud completion — 2026-11-05
+
+브랜치: `claude/cloud-work-completion-upgrade-beuecn` (기준: `main` @ `47461ef`, #17 병합 직후)
+
+이 문서는 사용자가 자리를 비운 동안 클라우드(Linux 컨테이너, CAD 호스트 없음)에서 수행한 작업 기록이다.
+Windows CAD 호스트·.NET SDK·자격증명이 필요한 항목은 실행하지 않았고, 실행한 것처럼 기록하지도 않았다.
+
+## Inventory (미병합 브랜치 / PR)
+
+열린 PR: 없음. `git branch -r --no-merged origin/main` 결과 4개 브랜치.
+
+| 브랜치 | 판정 | 근거 |
+|---|---|---|
+| `agent/autocad-host-2027` | 건너뜀 (이미 병합) | khs0927/All-In-Cad#17 로 squash 병합됨. `main` 과의 차이는 `main` 쪽에만 있는 이후 커밋뿐. |
+| `agent/detection-evidence-20261003` | 통합 (merge) | `tool_probes` 의 installation-detection 의미론과 테스트는 이미 khs0927/All-In-Cad#16 으로 `main` 에 있음. 새로 들어온 것은 `docs/audits/2026-10-03-upstream-pin-evidence.json` 뿐이며, 모든 pinned SHA 가 `upstream/upstream.lock.json` 과 일치함을 확인. |
+| `codex/autocad2027-readonly-capabilities-20260918` | 부분 통합 | `scripts/windows/doctor.ps1` 의 .NET SDK 탐지(DOTNET_ROOT → 저장소 `.dotnet` → PATH, `--list-sdks` 성공 필요)와 `.gitignore` 의 `.dotnet/` 만 이식. 같은 커밋의 ODA 경로 hunk 는 경로 구분자(`\`)가 사라진 회귀라서 제외. 네이티브 C# 변경은 아래 행과 동일 내용. |
+| `feat/read-only-host-adapters-current-main-20261003` | 보류 (호스트 필요) | 위 codex 브랜치의 네이티브 부분을 rebase 한 것(파일 내용 동일). `native/autocad2027/Plugin.cs`, `.csproj` 가 #17 의 1,078줄 AutoCAD 2027 워커와 정면 충돌하며, 214줄 read-only 어댑터는 #17 워커에 의해 사실상 대체됨. ZWCAD 2026 read-only 어댑터(247줄)는 충돌 없이 병합되지만, ZWCAD 작업은 `docs/ZWCAD-HOST-HANDOFF.md` 기준으로 동결 상태이고 이 컨테이너에서는 .NET SDK·ZRX.NET 어셈블리가 없어 컴파일조차 검증할 수 없어 병합하지 않음. |
+
+## Changes on this branch
+
+1. `merge:` detection-evidence 브랜치의 upstream pin/루트 라이선스 감사 JSON.
+2. `feat(doctor):` .NET SDK 탐지 강화 (codex 브랜치 f664ee9 의 일부 이식).
+3. `fix:` 모든 CLI 실행마다 출력되던 pydantic `Field name "schema" ... shadows an attribute` UserWarning 5건을
+   `all_in_cad` 패키지 범위로만 정확히 필터링 (`src/all_in_cad/_warnings.py`). 필드명 `schema` 는 저장 포맷의 일부라 유지.
+   → **대체됨:** main 에 병합된 `khs0927/All-In-Cad#19` 가 필드 alias 로 근본 원인을 고쳐, 필터는 제거함
+   (`python -W error::UserWarning -c "import all_in_cad"` 통과).
+4. `ci:` `core-ci`, `dxf-recorder-ci` 가 `claude/**` push 에서도 실행되도록 트리거 추가.
+
+## Upgrades
+
+- `pip list --outdated`: `pydantic_core 2.50.2 → 2.50.3` (pydantic 이 고정하는 전이 의존성, 하한만 있는 범위라 변경 불필요), `pip` 자체.
+- `pip-audit`: **No known vulnerabilities found** (설치된 `[dev,headless]` 전체).
+- 의존성 범위(`pydantic>=2.9,<3`, `ezdxf>=1.4`, `pytest>=8.3`, `ruff>=0.8`, `mypy>=1.10`)는 최신 버전을 이미 허용하므로 수정하지 않음.
+- GitHub Actions 는 이미 SHA 고정(checkout v7.0.1, setup-python v7.0.0, setup-dotnet v6.0.0)이라 변경 없음.
+
+## Open-source integration
+
+추가 없음. `ezdxf` 는 이미 `dev`/`headless` extra 에 있음(#18). ROADMAP 의 남은 항목(공간 인덱스 가속, PDF 증거 수집)은
+"실제 도면 벤치마크/정규화 검증 이후"로 명시돼 있어, 지금 shapely/rtree 등을 넣는 것은 문서와 어긋난다고 판단.
+
+## Verification (Linux, CPython 3.13.18, `.venv`)
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev,headless]"
+.venv/bin/ruff check src tests scripts ci          # All checks passed!
+.venv/bin/pytest -o addopts="" -q                  # 112 passed, 1 skipped
+.venv/bin/python -m pytest src/all_in_cad/recorder -o addopts="" -q --junitxml=ci-reports/recorder-junit.xml
+                                                   # 844 passed, 4 skipped (FreeCAD 미설치 allowlist)
+.venv/bin/python -m pytest ci/recorder_ci_gate_test.py -o addopts="" -q   # 20 passed
+.venv/bin/python ci/recorder_ci_gate.py ci-reports/recorder-junit.xml
+                                                   # collected=848 passed=844 failed=0 skipped=4 floor=848
+.venv/bin/python scripts/upstream/check_pins.py    # OK (offline 구조 검증)
+.venv/bin/pip-audit                                # No known vulnerabilities found
+```
+
+- `mypy src`: 117 errors / 29 files — 기존부터 있던 것(주로 recorder 테스트 모듈의 타입 표기, pydantic `schema` 필드).
+  CI 에서 mypy 를 돌리지 않으며 이번 변경으로 늘어난 것은 없음. 별도 정리 과제로 남김.
+- `scripts/upstream/check_pins.py --online`: 이 컨테이너의 egress proxy 가 GitHub REST API 를 HTTP 403 으로 거부해 실행 불가.
+  주간 `upstream-audit` workflow 로 확인 필요.
+- `.NET`: `dotnet` 미설치, `builds.dotnet.microsoft.com` 접속이 proxy 에서 거부되어 `native/shared`, `native/headless` 빌드 미검증 (CI `native-protocol` job 이 담당).
+  `native-scaffold-policy` job 의 grep 단언 4개는 로컬에서 모두 통과.
+
+### Real run
+
+ezdxf 로 2실 평면 DXF(외벽/내벽 이중선, 문 호, 창, 텍스트)를 만들어 실제 CLI 로 색인:
+
+```bash
+all-in-cad index --root <tmp>/drawings --db <tmp>/index.sqlite --workdir <tmp>/work --compute-hash
+# processed 1: lane=ezdxf entities=7 rooms=4 opening_hosts=2 semantic_nodes=15 semantic_edges=20 warnings=[] (exit 0)
+# 두 번째 실행: processed 0, skipped 1, failures 0  (증분 색인 동작)
+# SQLite 테이블: drawings, entities, refs, semantic_nodes, semantic_edges, rooms, opening_hosts,
+#                room_adjacencies, annotation_bindings, extraction_runs
+all-in-cad benchmark --workdir <tmp>/bench --entities 2000
+# extracted_entities=2000 semantic_nodes=6000 semantic_edges=4000; generate 211ms / extract 276ms / graph 43ms
+all-in-cad doctor   # ezdxf DETECTED, acadsharp/libredwg/oda NOT_DETECTED, 모두 execution_allowed=false
+```
+
+## Remaining (사용자 Windows CAD 호스트 / 자격증명 필요)
+
+- `feat/read-only-host-adapters-current-main-20261003` 의 ZWCAD 2026 read-only 어댑터: ZWCAD 라이선스·ZRX.NET 어셈블리가 있는 호스트에서
+  컴파일·NETLOAD 후 병합 여부 결정. AutoCAD 쪽은 #17 워커로 대체되었으므로 해당 브랜치를 그대로 병합하지 말 것.
+- `docs/ROADMAP.md` Phase 1/2 의 라이브 호스트 항목 전부 (AutoCAD 2027 플러그인 로드, Named Pipe ping, PyRx 매트릭스, 네이티브 트랜잭션/readback).
+- 실제 `Z:\` 도면 트리 인벤토리, 실도면 기반 정밀도/재현율 측정.
+- `doctor.ps1` 변경은 PowerShell 이 없어 이 컨테이너에서 실행하지 못함 → Windows 에서 `scripts/windows/doctor.ps1` 1회 실행 확인 필요.
+- upstream pin online 감사 (GitHub API 접근 가능한 환경/CI).
+
+## Local Windows run (2026-11-05)
+
+호스트: `DESKTOP-CMFD3O8`, Windows 10, AutoCAD 2027(26.0.0.0, PID 82684, 빈 `Drawing1.dwg`), .NET SDK 10.0.403(프로세스 환경변수 `DOTNET_ROOT`만 사용).
+
+### 결과
+
+| 항목 | 명령 | 결과 |
+|---|---|---|
+| doctor | `scripts/windows/doctor.ps1` | exit 0. `DOTNET_ROOT` 없으면 .NET SDK `False`, 있으면 `True`(10.0.403). 탐지 순서 동작 확인. `-Strict` 는 수정 전 3건 실패로 종료(ZWCAD, ODA, ACadSharp probe) |
+| doctor ODA 오탐 | 같은 스크립트 | 이 PC는 `ProgramFiles=E:\Program files` 인데 ODA는 `C:\Program Files\ODA` 에 있어 못 찾음. `doctor.ps1`, `tool_probes.odafc_search_roots` 에 `SystemDrive` 루트 추가 후 둘 다 `ODAFileConverter 27.1.0` 탐지 |
+| upstream pin 온라인 감사 | `python scripts/upstream/check_pins.py --online --json-output ...` | exit 0. 14개 pin 모두 upstream 에 존재. current 3, behind 11. 결과: `docs/audits/2026-11-05-upstream-pin-online.json`. pin 은 올리지 않음 |
+| 플러그인 빌드 | `dotnet build native/autocad2027/AllInCad.AutoCAD2027.csproj -c Release -p:ACAD2027_DIR="C:\Program Files\Autodesk\AutoCAD 2027"` | 수정 전 실패, 수정 후 오류 0, 경고 3(WindowsBase 버전 충돌 MSB3277, 로드에는 영향 없었음) |
+| 플러그인 로드 | 빈 세션에서 `(command "_.NETLOAD" "<scratch>/AllInCad.AutoCAD2027.dll")` | `Initialize ok`, `\\.\pipe\all-in-cad-acad-82684` 생성. `SECURELOAD=0` 이라 보안 프롬프트 없음 |
+| Named Pipe | framing 스모크 클라이언트(`aic.native/1`) | `system.ping` pong, `host.context`(`host=autocad2027`, `sdk_bound=true`, 문서 revision/개수), `host.capabilities` 통과. `plan.execute` → `E_METHOD_NOT_FOUND`, `aic.native/2` → `E_PROTOCOL` |
+| 네이티브 트랜잭션 | `host.draw_line` (0,0)→(1234.5,678.9) | handle `1F75`, 개체 0→1, revision 8053→8054 |
+| 독립 readback | power-cad `cad_get`, `cad_snapshot` | `LINE`, 시작/끝점 일치, 길이 1408.86318. 화면 확인 |
+| 정리 | power-cad `cad_delete` dry_run → 실행 | 개체 0개 복귀(power-cad, pipe 양쪽 확인) |
+| Python | `ruff check src tests scripts ci`, `pytest tests`, `pytest src/all_in_cad/recorder` (Windows, CPython 3.12) | ruff 통과, core 117 passed, recorder 844 passed / 4 skipped (12분 15초) |
+
+### 코드 수정
+
+- `native/autocad2027` 은 #17 이후 한 번도 빌드될 수 없는 상태였다. `Plugin.cs` 가 쓰는 `PipeNames`, `WorkerDescriptor`, `WorkerDescriptorStore`, Newtonsoft 기반 요청 타입이 저장소에 없고 Newtonsoft 참조도 없었다.
+  `HostProtocol.cs` 를 추가해 핸들러 코드를 그대로 두고 커밋된 `native/shared` 서버 위에 올렸다.
+- 호스트 식별값이 `zwcad2026` / `ZWCAD` 로 나가던 것을 `autocad2027` / `AutoCAD` 로 수정. `document_id` 접두사도 `autocad:`.
+- `host.context` 와 `SnapshotModel` 이 pipe 스레드에서 DB 를 읽던 것을 애플리케이션 스레드로 옮김.
+- `AIC_AUTOCAD_SESSION_TOKEN` 이 설정되어 있으면 세션 토큰을 요구.
+
+### 남은 항목
+
+- `plan.execute`, `entity.read`, `document.snapshot`, `verification.capture` 는 미구현. 승인 토큰, 쓰기 lease, 멱등 키 없이 `host.draw_line`, `host.send_command` 가 열려 있어 `AGENTS.md` 규칙 2, 3 을 아직 충족하지 못한다. 그래서 ROADMAP 의 "Execute v1 primitives", "Capture native post-commit readback" 은 체크하지 않았다(이번 증거는 LINE 1종).
+- revision 이 Handseed 값이라 삭제 후에도 8054 그대로였다. 생성만 반영하므로 `expected_revision` 충돌 검사로 쓸 수 없다. `document_id` 도 이름 기반이다.
+- `host.send_command`, `xicad.*` 는 실행하지 않음. XiCAD 는 이 AutoCAD 에 로드되어 있지 않다.
+- Autodesk Assistant MCP, `bimwright/dwg-mcp` 2027 shell, PyRx 26.0 매트릭스: 설치가 필요해 실행하지 않음.
+- ZWCAD 2026 전체: ZWCAD 미설치, 프로세스 없음.
+- `Z:\` 인벤토리와 실도면 정밀도/재현율: 이 PC에 `Z:` 드라이브 없음(C, D, E, G 만 존재).
+- `native/autocad2027` 빌드는 CI 에 없다(AutoCAD SDK 필요). `acaddoc.autoload.lsp` 의 경로는 다른 PC 기준이고 실행하지 않음.
+- 시험 빌드는 언로드할 수 없어 AutoCAD 를 닫을 때까지 PID 82684 에 로드된 채 pipe 를 연다. 영구 설치는 없음. 로그와 descriptor 는 `%LOCALAPPDATA%\All-In-Cad` 에 남고 descriptor 는 종료 시 삭제된다.

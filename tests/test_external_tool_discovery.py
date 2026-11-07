@@ -112,6 +112,22 @@ def test_oda_probe_reports_executable_when_detected(monkeypatch: pytest.MonkeyPa
     assert oda.executable == str(fake)
 
 
+def test_odafc_roots_include_system_drive_when_program_files_is_redirected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from all_in_cad import tool_probes
+
+    monkeypatch.setenv("ProgramFiles", "E:\\Program files")
+    monkeypatch.setenv("ProgramW6432", "E:\\Program files")
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.setenv("SystemDrive", "C:")
+
+    assert tool_probes.odafc_search_roots() == (
+        Path("E:\\Program files") / "ODA",
+        Path("C:\\") / "Program Files" / "ODA",
+    )
+
+
 def test_doctor_script_does_not_pin_an_oda_version() -> None:
     """Source-level proxy for the same defect in doctor.ps1.
 

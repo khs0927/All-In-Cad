@@ -75,5 +75,11 @@
       <Private>false</Private>
       <SpecificVersion>false</SpecificVersion>
     </Reference>
+    <!-- Bind to the copy AutoCAD already loads; a private copy could collide with it. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(Acad2027Dir)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
   </ItemGroup>
 </Project>
