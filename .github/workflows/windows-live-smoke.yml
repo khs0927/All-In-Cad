@@ -1,0 +1,71 @@
+name: windows-live-smoke
+
+# Manual only. Runs on the owner's self-hosted Windows runner, which must run as the same
+# interactive user as AutoCAD 2027 (current-user Named Pipe + per-session COM). It never
+# commits: evidence is uploaded as an artifact and promoted locally with
+# `all-in-cad live-smoke ingest <evidence> --apply`.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run = detection only; read-only = pipe ping/context; write = LINE on a new %TEMP% drawing"
+        type: choice
+        options: ["dry-run", "read-only", "write"]
+        default: "dry-run"
+      process_id:
+        description: "acad.exe PID to target (0 = first live worker)"
+        type: string
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-live-smoke-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  autocad2027:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Live smoke (${{ inputs.mode }})
+        # Windows PowerShell 5.1: COM attach uses Marshal.GetActiveObject, which pwsh lacks.
+        shell: powershell
+        env:
+          SMOKE_MODE: ${{ inputs.mode }}
+          SMOKE_PID: ${{ inputs.process_id }}
+        run: |
+          $flags = @()
+          if ($env:SMOKE_MODE -eq "dry-run") { $flags += "-DryRun" }
+          if ($env:SMOKE_MODE -eq "write") { $flags += "-Write" }
+          $smokePid = 0
+          if (-not [int]::TryParse($env:SMOKE_PID, [ref]$smokePid)) { throw "process_id must be an integer" }
+          & .\scripts\windows-live-smoke.ps1 @flags -ProcessId $smokePid -OutputDir artifacts\live-smoke
+          exit $LASTEXITCODE
+
+      - name: Evaluate evidence against the verification ledger (read-only)
+        if: always()
+        shell: powershell
+        run: |
+          $evidence = Get-ChildItem artifacts\live-smoke -Filter live-smoke.json -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $evidence) { Write-Host "no evidence produced"; exit 0 }
+          $python = Get-Command python -ErrorAction SilentlyContinue
+          if (-not $python) { Write-Host "python not on PATH; run ingest locally"; exit 0 }
+          python -m venv .venv-live-smoke
+          .\.venv-live-smoke\Scripts\python.exe -m pip install --quiet -e .
+          .\.venv-live-smoke\Scripts\all-in-cad.exe live-smoke ingest $evidence.FullName |
+            Tee-Object -FilePath (Join-Path $evidence.DirectoryName "ingest-preview.json")
+          exit 0
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: live-smoke-${{ inputs.mode }}-${{ github.run_id }}
+          path: artifacts/live-smoke/
+          if-no-files-found: warn
+          retention-days: 90
