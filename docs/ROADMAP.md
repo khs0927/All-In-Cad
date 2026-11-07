@@ -14,6 +14,9 @@
 ## Phase 1 — live host bring-up
 
 These items require the Windows CAD host and are intentionally not simulated in CI.
+Items marked with `scripts/windows-live-smoke.ps1` are ticked only by
+`all-in-cad live-smoke ingest <evidence> --apply`, which records the run in
+`docs/verification-ledger.json` first (see `.github/workflows/windows-live-smoke.yml`).
 
 - [ ] AutoCAD 2027: enable Autodesk Assistant Tech Preview and verify official MCP endpoint.
 - [ ] AutoCAD 2027: install/test `bimwright/dwg-mcp` 2027 shell.
@@ -37,6 +40,8 @@ Host-independent work is completed first; CAD-specific execution remains live-ho
 - [x] layer/block/text/dimension operation contracts.
 - [x] normalized native snapshot and requested/actual diff model.
 - [x] Bind shared Named Pipe worker to AutoCAD 2027 document/database APIs.
+- [ ] AutoCAD 2027: commit a v1 LINE primitive in a native transaction on a %TEMP% drawing (`scripts/windows-live-smoke.ps1 -Write`).
+- [ ] AutoCAD 2027: read back the committed LINE through COM and cross-check it against the request (`scripts/windows-live-smoke.ps1 -Write`).
 - [ ] Bind shared Named Pipe worker to ZWCAD 2026 ZRX.NET APIs.
 - [ ] Execute v1 primitives in real native transactions on both hosts.
 - [ ] Capture native post-commit readback from both hosts.

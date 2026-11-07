@@ -1,5 +1,7 @@
 param(
-  [switch]$Strict
+  [switch]$Strict,
+  # Also write the checks as a JSON array (name/ok/detail) for scripts\windows-live-smoke.ps1.
+  [string]$Json = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,6 +82,12 @@ Add-Check "ODA File Converter" ($null -ne $oda) ($(if ($oda) { $oda.FullName } e
 $acadsharpProbe = Get-ChildItem -Path (Join-Path $PSScriptRoot "..\..\native\headless\bin") -Filter "AllInCad.ACadSharpProbe.exe" -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -Last 1
 Add-Check "ACadSharp DWG probe" ($null -ne $acadsharpProbe) ($(if ($acadsharpProbe) { $acadsharpProbe.FullName } else { "not built (optional)" }))
 $checks | Format-Table -AutoSize
+if ($Json) {
+  $jsonDir = Split-Path -Parent $Json
+  if ($jsonDir) { New-Item -ItemType Directory -Force -Path $jsonDir | Out-Null }
+  $plain = @($checks | ForEach-Object { [pscustomobject]@{ name = $_.name; ok = $_.ok; detail = [string]$_.detail } })
+  ConvertTo-Json -InputObject $plain -Depth 3 | Set-Content -Encoding UTF8 -LiteralPath $Json
+}
 $failed = @($checks | Where-Object { -not $_.ok })
 if ($Strict -and $failed.Count -gt 0) {
   throw "Doctor failed: $($failed.Count) checks failed"

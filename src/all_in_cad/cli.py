@@ -16,6 +16,7 @@ from .capabilities import (
 from .cross_lane import verify_dwg_across_lanes
 from .extraction import ExtractionLane, ToolProbe
 from .inventory import build_inventory
+from .live_smoke import ingest as ingest_live_smoke
 from .pipeline import process_manifest
 from .project_index import ProjectIndex
 from .tool_probes import capability_report, detect_tool_probes
@@ -71,8 +72,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     benchmark_parser.add_argument("--workdir", required=True)
     benchmark_parser.add_argument("--entities", type=int, default=1000)
 
+    live_smoke_parser = subparsers.add_parser(
+        "live-smoke",
+        help="validate Windows live-smoke evidence and promote verification-ledger items",
+    )
+    live_smoke_sub = live_smoke_parser.add_subparsers(dest="live_smoke_command", required=True)
+    ingest_parser = live_smoke_sub.add_parser(
+        "ingest",
+        help="evaluate artifacts/live-smoke/<run>/live-smoke.json (read-only unless --apply)",
+    )
+    ingest_parser.add_argument("evidence")
+    ingest_parser.add_argument("--ledger", default="docs/verification-ledger.json")
+    ingest_parser.add_argument("--roadmap", default="docs/ROADMAP.md")
+    ingest_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write the ledger entries and tick the ROADMAP items the ledger now proves",
+    )
+
     args = parser.parse_args(argv)
 
+    if args.command == "live-smoke":
+        try:
+            outcome = ingest_live_smoke(
+                Path(args.evidence),
+                ledger_path=Path(args.ledger),
+                roadmap_path=Path(args.roadmap),
+                apply=args.apply,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"live-smoke: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(outcome, indent=2, sort_keys=True))
+        return 0 if outcome["summary"]["ok"] else 1
     if args.command == "capability-matrix":
         return _run_capability_matrix(args.report)
     if args.command == "benchmark":

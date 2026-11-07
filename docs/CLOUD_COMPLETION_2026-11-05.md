@@ -121,3 +121,53 @@ all-in-cad doctor   # ezdxf DETECTED, acadsharp/libredwg/oda NOT_DETECTED, 모�
 - `Z:\` 인벤토리와 실도면 정밀도/재현율: 이 PC에 `Z:` 드라이브 없음(C, D, E, G 만 존재).
 - `native/autocad2027` 빌드는 CI 에 없다(AutoCAD SDK 필요). `acaddoc.autoload.lsp` 의 경로는 다른 PC 기준이고 실행하지 않음.
 - 시험 빌드는 언로드할 수 없어 AutoCAD 를 닫을 때까지 PID 82684 에 로드된 채 pipe 를 연다. 영구 설치는 없음. 로그와 descriptor 는 `%LOCALAPPDATA%\All-In-Cad` 에 남고 descriptor 는 종료 시 삭제된다.
+
+## Round 2 (2026-11-07)
+
+목표: Windows CAD 호스트 검증을 소유자 self-hosted runner(`self-hosted, Windows, X64`)에서 반복 가능하게 만들기.
+
+### 추가한 것
+
+- `scripts/windows-live-smoke.ps1` — AutoCAD 2027 라이브 스모크. 실행마다 `artifacts/live-smoke/<runId>/live-smoke.json`
+  (`all-in-cad/live-smoke/v1`: 버전, 단계별 passed/failed/skipped, 원본 응답 파일별 sha256)을 남긴다.
+  - `-DryRun`: 탐지만(OS, `doctor.ps1 -Json`, AutoCAD 2027 설치/버전, 플러그인 빌드 sha256, acad.exe, worker descriptor). CAD 접속 없음.
+  - 기본: 읽기 전용. Named Pipe `system.ping` / `host.capabilities` / `host.context`. 사용자 도면 경로는 sha256 으로만 기록.
+  - `-Write`: COM 으로 `%TEMP%` 에 **새 도면**을 만들고, worker 의 활성 문서가 그 temp 도면임을 `host.context` 로 확인한 뒤에만
+    `host.draw_line` 1회 → COM `HandleToObject` 로 독립 readback → temp 도면 닫기/삭제, 이전 활성 문서 복귀. 사용자 도면은 저장·닫기·수정하지 않는다.
+- `scripts/windows/doctor.ps1 -Json <path>` — 기존 표 출력은 그대로, 같은 결과를 JSON 으로도 기록(추가 옵션).
+- `src/all_in_cad/live_smoke.py` + `all-in-cad live-smoke ingest <evidence> [--apply]` — 증거 스키마 검증 →
+  `docs/verification-ledger.json`(`all-in-cad/verification-ledger/v1`) 항목 평가 → ROADMAP 승격.
+  readback 항목은 PS 단계 통과만으로는 부족하고, 요청(파이프)/실제(COM) 두 채널을 기존 `DrawingEvidence` + `cross_check_evidence`
+  로 다시 비교해 `VerificationReport.passed` 여야 통과. 승격은 각 항목의 **가장 최근** ledger 기록이 passed 일 때만, 체크만 하고 해제는 하지 않는다(회귀는 보고).
+  `--apply` 없으면 아무것도 쓰지 않는다.
+- `docs/ROADMAP.md` Phase 2 에 live smoke 로만 체크되는 AutoCAD 항목 2개 추가(LINE 네이티브 트랜잭션, COM readback cross-check).
+  "both hosts" 항목은 ZWCAD 생산자가 없으므로 자동 승격 대상에서 제외.
+- `.github/workflows/windows-live-smoke.yml` — `workflow_dispatch` 전용, `runs-on: [self-hosted, Windows, X64]`, `contents: read`,
+  Windows PowerShell 5.1(COM 용), 입력은 env 로만 전달, 증거를 artifact 로 업로드하고 ingest 결과는 미리보기(`ingest-preview.json`)만 만든다. 커밋하지 않음.
+
+### 검증 (Linux 컨테이너)
+
+```text
+ruff check src tests scripts ci     # All checks passed!
+pytest -o addopts="" -q             # 140 passed, 1 skipped (신규 tests/test_live_smoke.py 24건 포함)
+mypy src/all_in_cad/live_smoke.py   # Success
+python scripts/upstream/check_pins.py  # OK
+```
+
+PowerShell 이 이 컨테이너에 없어 `.ps1` 은 실행하지 못했다. 대신 테스트가 스크립트의 정적 계약(ledger 가 요구하는 step id 를 모두 내보내는지,
+Save/SaveAs/Close 가 temp 문서 객체에만 걸리는지, `host.draw_line` 이 temp 가드 뒤에만 있는지, `host.send_command` 미사용)과
+workflow(수동 트리거만, self-hosted 라벨, 입력이 run 스크립트에 직접 보간되지 않음)를 검사한다. 실제 실행은 아래 LOCAL STEPS.
+
+### LOCAL STEPS (Windows PC)
+
+1. Runner 등록: GitHub `khs0927/All-In-Cad` → Settings → Actions → Runners → New self-hosted runner → Windows x64 의 명령으로
+   `C:\actions-runner\all-in-cad` 에 설치, `config.cmd --url https://github.com/khs0927/All-In-Cad --token <표시된 토큰>`.
+   기본 라벨이 `self-hosted, Windows, X64`. **서비스로 설치하지 말 것**(질문에 N) — 파이프가 CurrentUserOnly 이고 COM ROT 가 세션별이라
+   AutoCAD 를 띄운 사용자 세션에서 `run.cmd` 로 실행해야 한다.
+2. AutoCAD 2027 실행 → `dotnet build native/autocad2027/AllInCad.AutoCAD2027.csproj -c Release -p:ACAD2027_DIR="C:\Program Files\Autodesk\AutoCAD 2027"` →
+   빌드 산출물 복사본을 `NETLOAD`.
+3. 로컬 1회 확인: `powershell -ExecutionPolicy Bypass -File scripts\windows-live-smoke.ps1 -DryRun` → 기본(읽기 전용) → `-Write`.
+4. Workflow: `gh workflow run windows-live-smoke.yml -R khs0927/All-In-Cad -f mode=write` (또는 Actions 탭) →
+   `gh run download <run-id> -R khs0927/All-In-Cad -D artifacts\downloaded`.
+5. 승격: `all-in-cad live-smoke ingest artifacts\downloaded\...\live-smoke.json` 로 미리보기 → 맞으면 `--apply` →
+   `docs/verification-ledger.json`, `docs/ROADMAP.md` 커밋.

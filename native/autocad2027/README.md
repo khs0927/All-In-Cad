@@ -24,3 +24,7 @@ Required production properties:
 - fail-closed stale-revision checks;
 - handle readback and requested/actual/diff;
 - no arbitrary C# execution by default.
+
+Repeatable host check: `scripts/windows-live-smoke.ps1` (`-DryRun` detection, default read-only pipe ping/context,
+`-Write` one LINE on a new `%TEMP%` drawing with COM readback). Evidence goes to `artifacts/live-smoke/` and is promoted
+into `docs/verification-ledger.json` / `docs/ROADMAP.md` with `all-in-cad live-smoke ingest <evidence> --apply`.
