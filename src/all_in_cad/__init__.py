@@ -12,6 +12,7 @@ from .architecture import (
     infer_rooms,
 )
 from .executor import ExecutionError, GuardedExecutor, InMemoryNativeAdapter
+from .host_approval import HostApprovalError, HostWriteGuard, SendCommandPolicy
 from .journal import IdempotencyJournal, JournalConflict
 from .lease import DocumentLeaseManager, LeaseConflict
 from .models import (
@@ -51,6 +52,9 @@ __all__ = [
     "AnnotationBinding",
     "ApprovalError",
     "ApprovalSigner",
+    "HostApprovalError",
+    "HostWriteGuard",
+    "SendCommandPolicy",
     "CapabilityRouter",
     "ChangeOperation",
     "ChangePlan",

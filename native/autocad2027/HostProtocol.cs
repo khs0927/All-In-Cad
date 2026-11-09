@@ -23,6 +23,13 @@ namespace AllInCad.AutoCAD2027
         public JObject? Params { get; set; }
         public string? SessionToken { get; set; }
 
+        /// <summary>
+        /// The params exactly as received (System.Text.Json). The write approval gate digests these,
+        /// not <see cref="Params"/>: Newtonsoft's JObject.Parse rewrites date-like strings and number
+        /// spellings, which would make the digest depend on the parser instead of the request.
+        /// </summary>
+        public JsonElement RawParams { get; set; }
+
         internal static RpcRequest From(Shared.RpcRequest request) =>
             new RpcRequest
             {
@@ -33,6 +40,9 @@ namespace AllInCad.AutoCAD2027
                     ? JObject.Parse(request.Params.GetRawText())
                     : null,
                 SessionToken = request.SessionToken,
+                RawParams = request.Params.ValueKind == JsonValueKind.Undefined
+                    ? default
+                    : request.Params.Clone(),
             };
     }
 

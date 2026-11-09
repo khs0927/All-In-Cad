@@ -171,3 +171,68 @@ workflow(수동 트리거만, self-hosted 라벨, 입력이 run 스크립트에 
    `gh run download <run-id> -R khs0927/All-In-Cad -D artifacts\downloaded`.
 5. 승격: `all-in-cad live-smoke ingest artifacts\downloaded\...\live-smoke.json` 로 미리보기 → 맞으면 `--apply` →
    `docs/verification-ledger.json`, `docs/ROADMAP.md` 커밋.
+
+## Round 3 (2026-11-09)
+
+배경: power-cad-mcp `docs/ecosystem/CAD_CONSOLIDATION_PLAN.md` 가 같은 AutoCAD 2027 프로세스에 두 writer 가 함께 로드될 수 있는데
+All-In-Cad 플러그인의 `host.draw_line` / `host.send_command` 등은 승인 토큰 없이 실행된다고 지적. power-cad 쪽 writer 는 승인을 요구한다.
+
+### 변경 — 쓰기 승인 게이트 (기본 ON)
+
+- `native/shared/HostWriteGuard.cs` (신규): `HostWriteGuard` + `SendCommandPolicy` + `CanonicalJson`.
+  흐름은 power-cad `cad_plan_create` → `cad_plan_execute` 와 같은 개념: **plan → token → execute**.
+  - `host.plan_write {method, params}` → 검증 후 pending plan 저장, `plan_id`, `approval_token`, `operation_digest`, `expires_at` 반환(쓰기 없음).
+  - 게이트 대상 메서드는 같은 params + `params.approval_token` 으로 호출. 토큰 = `b64url(body).b64url(HMAC-SHA256)`, 프로세스별 랜덤 비밀키,
+    method + canonical params digest 에 묶임, 기본 120 s 만료(`AIC_APPROVAL_TTL_SECONDS`, 최대 600), **1회용**, pending 최대 64.
+  - 거부 코드: `E_APPROVAL_REQUIRED` / `E_APPROVAL_INVALID` / `E_APPROVAL_MISMATCH` / `E_APPROVAL_EXPIRED` / `E_APPROVAL_REUSED` / `E_APPROVAL_BUSY` / `E_COMMAND_DENIED`.
+  - 대상: `host.draw_line`, `host.send_command`, `xicad.ensure_loaded`, `xicad.draw_wall|door|window`, `xicad.smoke_wall_door_window`,
+    `xicad.run`, `xicad.rollback`, 그리고 `force_load` 가 켜진 `xicad.probe`. 읽기(`system.ping`, `host.context`, `host.capabilities`,
+    `xicad.state`, `xicad.run_status`)는 게이트 없음.
+  - `host.send_command` / `xicad.run` 명령 정책(항상 적용, opt-out 과 무관): 공백으로 나눈 모든 토큰을 denylist 와 대조(SHELL, SCRIPT, NETLOAD,
+    APPLOAD, VBA*, CUI*, SAVE*/QSAVE/WBLOCK/EXPORT/PLOT/PUBLISH, OPEN/NEW/CLOSE*/QUIT/EXIT, PURGE, SECURELOAD/TRUSTEDPATHS, U/UNDO 등),
+    LISP `(` 는 `AIC_SEND_COMMAND_ALLOW_LISP=1` 없이는 거부, `AIC_SEND_COMMAND_DENY` 로 추가, `AIC_SEND_COMMAND_ALLOW` 로 첫 명령 allowlist.
+  - **opt-out**: acad.exe 환경에 `AIC_REQUIRE_APPROVAL=0` (false/off/no). 그 외 값/미설정은 ON. opt-out 시 부트 로그 `approval SKIPPED (opt-out)`
+    + 명령줄 경고. 토큰 발급은 계속 되므로 같은 클라이언트 코드가 두 모드에서 동작.
+- `native/autocad2027/Plugin.cs`: `DispatchAsync` 가 switch **이전에** `AuthorizeWrite` 실행, `host.plan_write` 처리, Initialize 에서 env 로 게이트 재구성,
+  `system.ping.approval_required` / `host.capabilities.approval` 노출, capability 목록에 `host.plan_write` 추가.
+  `HostProtocol.cs`: 원본 System.Text.Json params(`RawParams`) 보존 — Newtonsoft 재파싱이 날짜형 문자열·숫자 표기를 바꿔 digest 가 흔들리지 않게.
+- `src/all_in_cad/host_approval.py` (신규): 같은 계약의 Python 레퍼런스 구현. `tests/fixtures/host_approval_vectors.json` 을 Python/C# 양쪽이 재생해
+  digest·숫자 정규화·명령 정책이 어긋나지 않음을 확인. (All-In-Cad 에는 Python MCP 서버가 없다 — 파이프 쓰기 경로는 C# 플러그인뿐이라 강제는 C# 에서 한다.)
+- `native/shared-tests/` (신규): NuGet 의존 없는 콘솔 테스트(CI `native-protocol` 잡에 추가).
+- `scripts/windows-live-smoke.ps1 -Write`: temp 도면 가드 뒤에 `pipe.approval_gate`(토큰 없는 draw_line → `E_APPROVAL_REQUIRED`, 엔티티 0 확인) →
+  `pipe.approval_request`(`host.plan_write`) → `pipe.draw_line`(토큰 포함) → `pipe.approval_reuse`(같은 토큰 재전송 → `E_APPROVAL_REUSED`, 개수 불변).
+  opt-out 워커에서는 gate/reuse 단계가 skipped. 증거 detail 에는 토큰 sha256 만 기록.
+- `live_smoke.py`: ledger 항목 `autocad2027.native.approval_gate` + ROADMAP 승격 줄 1개 추가. 기존 항목 요구 단계는 그대로.
+- 문서: `docs/PROTOCOL.md`(메서드 표, 흐름, 정책, opt-out), `docs/SAFETY_CONTRACT.md`, `README.md`, `native/autocad2027/README.md`.
+
+### 검증 (Linux 컨테이너)
+
+```text
+ruff check src tests scripts ci                      # All checks passed!
+pytest -o addopts="" -q                              # 175 passed, 1 skipped (tests/test_host_approval.py 33건 신규, test_live_smoke 2건 신규)
+dotnet build native/shared -c Release                # 0 warnings (TreatWarningsAsErrors)
+dotnet run --project native/shared-tests -c Release -- tests/fixtures/host_approval_vectors.json   # passed=84 failed=0
+pwsh 7.6 Parser.ParseFile(scripts/windows-live-smoke.ps1)   # parse errors: 0
+```
+
+AutoCAD SDK 가 없어 `AllInCad.AutoCAD2027.csproj` 전체 빌드는 불가(의도된 fail-closed). 대신 `HostProtocol.cs` + Plugin.cs 의 신규
+`DispatchAsync` 앞부분/`HandlePlanWrite`/`AuthorizeWrite` 를 그대로 잘라 net10 스크래치 프로젝트에서 컴파일(성공, CA1416 플랫폼 경고만 제외).
+`tests/test_host_approval.py` 는 Plugin.cs 의 dispatch `case` 가 모두 게이트 대상이거나 명시된 읽기 전용인지, 게이트가 switch 앞에서 도는지도 검사한다.
+
+### LOCAL STEPS (Windows PC)
+
+1. `git pull` 후 AutoCAD 2027 을 닫고 플러그인 재빌드:
+   `dotnet build native\autocad2027\AllInCad.AutoCAD2027.csproj -c Release -p:ACAD2027_DIR="C:\Program Files\Autodesk\AutoCAD 2027"`
+   (D: 설치면 기본값 그대로). `bin\Release` 를 별도 폴더로 복사.
+2. (선택) C# 게이트 단독 확인: `dotnet run --project native\shared-tests\AllInCad.NativeProtocol.Tests.csproj -c Release -- tests\fixtures\host_approval_vectors.json` → `failed=0`.
+3. AutoCAD 2027 실행(환경변수 `AIC_REQUIRE_APPROVAL` **설정하지 않음**) → 복사본 `NETLOAD` → `AIC_STATUS`.
+   `%LOCALAPPDATA%\All-In-Cad\logs\autocad2027.log` 에 `write approval gate: required=True` 확인.
+4. `powershell -ExecutionPolicy Bypass -File scripts\windows-live-smoke.ps1` (읽기 전용) → `pipe.capabilities` detail 에 `approval_required: true`.
+5. `powershell -ExecutionPolicy Bypass -File scripts\windows-live-smoke.ps1 -Write` → `pipe.approval_gate`, `pipe.approval_request`,
+   `pipe.draw_line`, `pipe.approval_reuse`, `com.readback` 모두 passed. 로그에 `approval refused ... E_APPROVAL_REQUIRED`, `approval consumed`,
+   `approval refused ... E_APPROVAL_REUSED` 가 순서대로 있어야 함.
+6. `all-in-cad live-smoke ingest artifacts\live-smoke\<runId>\live-smoke.json` 미리보기 → `autocad2027.native.approval_gate` passed 확인 → `--apply` →
+   `docs/verification-ledger.json`, `docs/ROADMAP.md` 커밋.
+7. (선택) opt-out 확인: AutoCAD 종료 → `set AIC_REQUIRE_APPROVAL=0` 한 cmd 창에서 `acad.exe` 실행 → NETLOAD → 명령줄 WARNING 확인 →
+   `-Write` 실행 시 gate/reuse 가 skipped, draw_line/readback 은 passed. 끝나면 변수 없이 AutoCAD 재시작(기본 ON 복귀).
+8. power-cad-mcp 와 함께 로드한 상태에서도 4–5 를 한 번 더 돌려, 두 플러그인 모두 토큰 없는 쓰기를 거부하는지 확인.

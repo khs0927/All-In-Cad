@@ -72,7 +72,10 @@ def _evidence(mode: str = "write", **overrides: Any) -> dict[str, Any]:
             _step("com.attach"),
             _step("temp.create"),
             _step("guard.active_is_temp"),
+            _step("pipe.approval_gate", refused_code="E_APPROVAL_REQUIRED"),
+            _step("pipe.approval_request", plan_id="0" * 32),
             _step("pipe.draw_line", handle="1F75", delta_entities=1),
+            _step("pipe.approval_reuse", refused_code="E_APPROVAL_REUSED"),
             _step("com.readback", **readback),
             _step("temp.save_digest"),
             _step("temp.cleanup", closed_temp_drawing=True),
@@ -304,3 +307,29 @@ def test_workflow_is_manual_and_targets_the_self_hosted_runner() -> None:
     assert "contents: read" in workflow
     assert "upload-artifact" in workflow
     assert "${{ inputs.process_id }}" not in workflow.split("run: |", 1)[1]
+
+
+def test_opt_out_run_keeps_the_write_items_but_not_the_gate_item() -> None:
+    payload = _set_status(_evidence(), "pipe.approval_gate", "skipped")
+    payload = _set_status(payload, "pipe.approval_reuse", "skipped")
+    results = _by_key(evaluate(LiveSmokeEvidence.model_validate(payload)))
+    assert results["autocad2027.native.write_transaction"]["status"] == "passed"
+    gate = results["autocad2027.native.approval_gate"]
+    assert gate["status"] == "failed"
+    assert "step pipe.approval_gate did not pass" in gate["reasons"]
+
+
+def test_script_draws_only_with_a_planned_single_use_token() -> None:
+    script = SCRIPT.read_text(encoding="utf-8")
+    plan = script.index('Invoke-Step "pipe.approval_request"')
+    draw = script.index('Invoke-Step "pipe.draw_line"')
+    reuse = script.index('Invoke-Step "pipe.approval_reuse"')
+    assert script.index('Invoke-Step "pipe.approval_gate"') < plan < draw < reuse
+    assert '"host.plan_write"' in script[plan:draw]
+    draw_block = script[draw:reuse]
+    assert '$drawParams["approval_token"] = $script:state["approvalToken"]' in draw_block
+    assert '"host.draw_line" $drawParams' in draw_block
+    assert "E_APPROVAL_REQUIRED" in script[: plan]
+    assert "E_APPROVAL_REUSED" in script[reuse:]
+    # The step detail records a digest of the token (consumed by the draw, so it is dead anyway).
+    assert "approval_token_sha256" in script[plan:draw]

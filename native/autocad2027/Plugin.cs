@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using AllInCad.NativeProtocol;
+using System.Text.Json;
 using Newtonsoft.Json.Linq;
 
 #if AIC_AUTOCAD_SDK
@@ -36,6 +37,12 @@ namespace AllInCad.AutoCAD2027
         internal static string? DescriptorPath { get; private set; }
         internal static string SessionId { get; private set; } = Guid.NewGuid().ToString("N");
         internal static string? LastPipeName { get; private set; }
+
+        /// <summary>
+        /// Approval gate for every writing / command-executing method (plan -> token -> execute).
+        /// Rebuilt from the acad.exe environment on Initialize: ON unless AIC_REQUIRE_APPROVAL=0.
+        /// </summary>
+        internal static HostWriteGuard WriteGuard { get; private set; } = HostWriteGuard.FromEnvironment();
         private static int ApplicationThreadId;
 
         static Plugin()
@@ -122,6 +129,13 @@ namespace AllInCad.AutoCAD2027
                 Server = null;
 
                 SessionId = Guid.NewGuid().ToString("N");
+                WriteGuard = HostWriteGuard.FromEnvironment();
+                WriteBootLog(
+                    "write approval gate: required=" + WriteGuard.Required
+                    + " ttl=" + WriteGuard.TtlSeconds + "s"
+                    + " send_command allowlist=" + (WriteGuard.Policy.Allowlist.Count > 0)
+                    + " lisp=" + WriteGuard.Policy.AllowLisp
+                    + (WriteGuard.Required ? string.Empty : " (OPT-OUT via " + HostWriteGuard.EnvRequire + "=0)"));
                 int pid = Process.GetCurrentProcess().Id;
                 ApplicationThreadId = Environment.CurrentManagedThreadId;
                 string pipeName = PipeNames.ResolveAutoCad2027(pid);
@@ -162,6 +176,12 @@ namespace AllInCad.AutoCAD2027
                 {
                     ZwApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
                         "\n[All-In-Cad] Named Pipe worker listening on " + @"\\.\pipe\" + pipeName);
+                    if (!WriteGuard.Required)
+                    {
+                        ZwApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                            "\n[All-In-Cad] WARNING: write approval gate is OFF (" + HostWriteGuard.EnvRequire
+                            + "=0). Pipe writes run without an approval token.");
+                    }
                 }
                 catch
                 {
@@ -260,6 +280,20 @@ namespace AllInCad.AutoCAD2027
         private static Task<RpcResponse> DispatchAsync(RpcRequest request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (string.Equals(request.Method, HostWriteGuard.PlanMethod, StringComparison.Ordinal))
+            {
+                return Task.FromResult(HandlePlanWrite(request));
+            }
+
+            // Every writing / command-executing method passes the approval gate first. Handlers
+            // that compose others (xicad.smoke_wall_door_window) call them directly, so one
+            // approved request authorizes exactly what it was planned as.
+            RpcResponse? refusal = AuthorizeWrite(request);
+            if (refusal is not null)
+            {
+                return Task.FromResult(refusal);
+            }
+
             switch (request.Method)
             {
                 case "system.ping":
@@ -302,6 +336,58 @@ namespace AllInCad.AutoCAD2027
             }
         }
 
+        private static RpcResponse HandlePlanWrite(RpcRequest request)
+        {
+            try
+            {
+                JsonElement raw = request.RawParams;
+                string? method = raw.ValueKind == JsonValueKind.Object
+                    && raw.TryGetProperty("method", out JsonElement m)
+                    && m.ValueKind == JsonValueKind.String
+                        ? m.GetString()
+                        : null;
+                JsonElement inner = raw.ValueKind == JsonValueKind.Object
+                    && raw.TryGetProperty("params", out JsonElement p)
+                        ? p
+                        : default;
+                Dictionary<string, object?> plan = WriteGuard.Plan(method, inner);
+                WriteBootLog("approval planned method=" + method + " plan_id=" + plan["plan_id"]);
+                return RpcResponse.Success(request.RequestId, plan);
+            }
+            catch (HostApprovalException ex)
+            {
+                WriteBootLog("approval plan refused code=" + ex.Code);
+                return RpcResponse.Failure(request.RequestId, ex.Code, ex.Message);
+            }
+        }
+
+        private static RpcResponse? AuthorizeWrite(RpcRequest request)
+        {
+            try
+            {
+                string? planId = WriteGuard.Authorize(request.Method, request.RawParams);
+                if (planId is not null)
+                {
+                    WriteBootLog("approval consumed method=" + request.Method + " plan_id=" + planId);
+                }
+                else if (!WriteGuard.Required && HostWriteGuard.RequiresApproval(request.Method, request.RawParams))
+                {
+                    WriteBootLog("approval SKIPPED (opt-out) method=" + request.Method);
+                }
+
+                return null;
+            }
+            catch (HostApprovalException ex)
+            {
+                WriteBootLog("approval refused method=" + request.Method + " code=" + ex.Code);
+                return RpcResponse.Failure(
+                    request.RequestId,
+                    ex.Code,
+                    ex.Message,
+                    new Dictionary<string, object?> { ["plan_method"] = HostWriteGuard.PlanMethod });
+            }
+        }
+
         private static RpcResponse HandlePing(RpcRequest request)
         {
             return RpcResponse.Success(
@@ -317,6 +403,7 @@ namespace AllInCad.AutoCAD2027
                     sdk_bound = HostCapabilities.SdkBound,
                     plugin_version = GetPluginVersion(),
                     listening = Server is not null,
+                    approval_required = WriteGuard.Required,
                 });
         }
 
@@ -330,6 +417,7 @@ namespace AllInCad.AutoCAD2027
                     protocol = ProtocolConstants.Version,
                     sdk_bound = HostCapabilities.SdkBound,
                     capabilities = HostCapabilities.All,
+                    approval = WriteGuard.Describe(),
                 });
         }
 
@@ -1078,6 +1166,8 @@ namespace AllInCad.AutoCAD2027
             "system.ping",
             "host.context",
             "host.capabilities",
+            // Write approval gate: plan -> token -> execute (native/shared/HostWriteGuard.cs).
+            "host.plan_write",
             "host.send_command",
             "host.draw_line",
             // AutoCAD port: added. Always answerable; reports whether XiCAD is actually present.

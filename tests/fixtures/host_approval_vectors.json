@@ -1,0 +1,232 @@
+{
+  "schema": "all-in-cad/host-approval-vectors/v1",
+  "digests": [
+    {
+      "method": "host.draw_line",
+      "params_json": "{\"x1\": 0, \"y1\": 0.0, \"x2\": 1234.5, \"y2\": 678.9}",
+      "canonical": "{\"method\":\"host.draw_line\",\"params\":{\"x1\":0,\"x2\":1234.5,\"y1\":0,\"y2\":678.9}}",
+      "digest": "a871f62630005e2a15708e9d44175a5605a8e950a3912856e58a857aaf0a63a5",
+      "requires_approval": true
+    },
+    {
+      "method": "host.draw_line",
+      "params_json": "{\"x2\": 1234.5, \"y2\": 678.9, \"x1\": 0.0, \"y1\": 0, \"approval_token\": \"ignored.by-digest\"}",
+      "canonical": "{\"method\":\"host.draw_line\",\"params\":{\"x1\":0,\"x2\":1234.5,\"y1\":0,\"y2\":678.9}}",
+      "digest": "a871f62630005e2a15708e9d44175a5605a8e950a3912856e58a857aaf0a63a5",
+      "requires_approval": true
+    },
+    {
+      "method": "host.draw_line",
+      "params_json": "{\"x1\": -0.0, \"y1\": 1e-05, \"x2\": 1.5e+300, \"y2\": 1e16}",
+      "canonical": "{\"method\":\"host.draw_line\",\"params\":{\"x1\":0,\"x2\":1.5e+300,\"y1\":1e-05,\"y2\":1e+16}}",
+      "digest": "3c4cf321820a7adb10169ac05b87a461fa1d84c98ecec3f0fc859571ba41d4d6",
+      "requires_approval": true
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"_.LINE 0,0 100,0 \", \"activate\": true, \"wait_ms\": 400}",
+      "canonical": "{\"method\":\"host.send_command\",\"params\":{\"activate\":true,\"command\":\"_.LINE 0,0 100,0 \",\"wait_ms\":400}}",
+      "digest": "13ca8fc715000e388874d4e2e6cb64798677632581564921ecb20d435f6b3ed6",
+      "requires_approval": true
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"\\uc120 \\\"q\\\" \\\\ \\n\\t\\ud83d\\ude00\", \"activate\": false}",
+      "canonical": "{\"method\":\"host.send_command\",\"params\":{\"activate\":false,\"command\":\"\\uc120 \\\"q\\\" \\\\ \\u000a\\u0009\\ud83d\\ude00\"}}",
+      "digest": "a461d34ae8a0baf416204d60ec8a9a461214e1e3db7392a86fd03e2757af09c6",
+      "requires_approval": true
+    },
+    {
+      "method": "xicad.run",
+      "params_json": "{\"command\": \"xiDrawWall\", \"args\": [\"0,0\", \"12000,0\", \"\"], \"contract\": [\"delta>=1\"], \"wrap_c\": true, \"expect_delta_min\": 1, \"nested\": {\"b\": null, \"a\": [1, 2.0, 2.5]}}",
+      "canonical": "{\"method\":\"xicad.run\",\"params\":{\"args\":[\"0,0\",\"12000,0\",\"\"],\"command\":\"xiDrawWall\",\"contract\":[\"delta>=1\"],\"expect_delta_min\":1,\"nested\":{\"a\":[1,2,2.5],\"b\":null},\"wrap_c\":true}}",
+      "digest": "359423a0907ea9d9572d304f7e5f081b87c6fdef7749b251bc83b9d1f9a1bdd7",
+      "requires_approval": true
+    },
+    {
+      "method": "xicad.probe",
+      "params_json": "{\"force_load\": true, \"timeout_ms\": 10000}",
+      "canonical": "{\"method\":\"xicad.probe\",\"params\":{\"force_load\":true,\"timeout_ms\":10000}}",
+      "digest": "53b7746df5fc2437696d8c34f5b6bf840b0f425eadd8b5dd65149b9f1f70053e",
+      "requires_approval": true
+    },
+    {
+      "method": "xicad.probe",
+      "params_json": "{\"force_load\": false}",
+      "canonical": "{\"method\":\"xicad.probe\",\"params\":{\"force_load\":false}}",
+      "digest": "15b35853fce63d93e51f67548c64d42f1eaf04be8e6fe71d69701a31de9bde56",
+      "requires_approval": false
+    },
+    {
+      "method": "xicad.probe",
+      "params_json": "{}",
+      "canonical": "{\"method\":\"xicad.probe\",\"params\":{}}",
+      "digest": "359df6a75b0339bd52965236c2fac5c82986714bc3aeb2f0ee6a2913323df472",
+      "requires_approval": false
+    },
+    {
+      "method": "host.context",
+      "params_json": "{}",
+      "canonical": "{\"method\":\"host.context\",\"params\":{}}",
+      "digest": "34184a13cda6b4e60f7c4757dbfe82749f8cc927a6ce667cd12836a7d4109f54",
+      "requires_approval": false
+    }
+  ],
+  "policy": [
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"_.LINE 0,0 100,0 \"}",
+      "error_code": null
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"SHELL\"}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"_.LINE 0,0 1,1  ._shell dir\"}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"cmd\": \"-PURGE A * N\"}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"(command \\\"_.LINE\\\" \\\"0,0\\\" \\\"1,1\\\" \\\"\\\")\"}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"qsave\"}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"_.U\"}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"NETLOAD C:/x.dll\"}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.send_command",
+      "params_json": "{\"command\": \"ZOOM E\"}",
+      "error_code": null
+    },
+    {
+      "method": "xicad.run",
+      "params_json": "{\"command\": \"xiDrawWall\", \"args\": [\"0,0\", \"12000,0\"]}",
+      "error_code": null
+    },
+    {
+      "method": "xicad.run",
+      "params_json": "{\"command\": \"xiDrawWall\", \"args\": [\"0,0\", \"  SHELL\"]}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "xicad.run",
+      "params_json": "{\"command\": \"xiDrawWall\", \"args\": [\"(startapp \\\"cmd\\\")\"]}",
+      "error_code": "E_COMMAND_DENIED"
+    },
+    {
+      "method": "host.draw_line",
+      "params_json": "{\"x1\": 0}",
+      "error_code": null
+    }
+  ],
+  "numbers": [
+    {
+      "json": "0",
+      "canonical": "0"
+    },
+    {
+      "json": "-0",
+      "canonical": "0"
+    },
+    {
+      "json": "-0.0",
+      "canonical": "0"
+    },
+    {
+      "json": "1000",
+      "canonical": "1000"
+    },
+    {
+      "json": "1000.0",
+      "canonical": "1000"
+    },
+    {
+      "json": "1e16",
+      "canonical": "1e+16"
+    },
+    {
+      "json": "1.5e300",
+      "canonical": "1.5e+300"
+    },
+    {
+      "json": "1e-05",
+      "canonical": "1e-05"
+    },
+    {
+      "json": "0.0001",
+      "canonical": "0.0001"
+    },
+    {
+      "json": "0.00012345",
+      "canonical": "0.00012345"
+    },
+    {
+      "json": "123456789012345680.0",
+      "canonical": "1.2345678901234568e+17"
+    },
+    {
+      "json": "9007199254740993.0",
+      "canonical": "9007199254740992.0"
+    },
+    {
+      "json": "-2.5e-7",
+      "canonical": "-2.5e-07"
+    },
+    {
+      "json": "1234.5",
+      "canonical": "1234.5"
+    },
+    {
+      "json": "678.9",
+      "canonical": "678.9"
+    },
+    {
+      "json": "0.1",
+      "canonical": "0.1"
+    },
+    {
+      "json": "1e15",
+      "canonical": "1000000000000000"
+    },
+    {
+      "json": "1.7976931348623157e308",
+      "canonical": "1.7976931348623157e+308"
+    },
+    {
+      "json": "5e-324",
+      "canonical": "5e-324"
+    },
+    {
+      "json": "-0.5",
+      "canonical": "-0.5"
+    },
+    {
+      "json": "123.456e5",
+      "canonical": "12345600"
+    },
+    {
+      "json": "12345678901234567890",
+      "canonical": "12345678901234567890"
+    }
+  ]
+}

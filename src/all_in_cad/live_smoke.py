@@ -218,6 +218,19 @@ LEDGER_ITEMS: tuple[LedgerItem, ...] = (
         minimum_mode="write",
         check=readback_verification,
     ),
+    LedgerItem(
+        key="autocad2027.native.approval_gate",
+        host="autocad2027",
+        description="live worker refused an untokened host.draw_line and a re-sent approval "
+        "token, and drew only with a single-use token from host.plan_write",
+        required_steps=(
+            "pipe.approval_gate",
+            "pipe.approval_request",
+            "pipe.draw_line",
+            "pipe.approval_reuse",
+        ),
+        minimum_mode="write",
+    ),
 )
 
 # ROADMAP line text (without the "- [ ] " prefix) → ledger keys that must all be passing.
@@ -230,6 +243,10 @@ ROADMAP_PROMOTIONS: dict[str, tuple[str, ...]] = {
     "AutoCAD 2027: read back the committed LINE through COM and cross-check it against the "
     "request (`scripts/windows-live-smoke.ps1 -Write`).": (
         "autocad2027.native.readback_crosscheck",
+    ),
+    "AutoCAD 2027: the live worker refuses untokened and re-used pipe writes "
+    "(write approval gate, `scripts/windows-live-smoke.ps1 -Write`).": (
+        "autocad2027.native.approval_gate",
     ),
 }
 

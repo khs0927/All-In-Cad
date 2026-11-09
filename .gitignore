@@ -27,6 +27,8 @@ native/zwcad2026/obj/
 native/zwcad2026/deploy*/
 native/shared/bin/
 native/shared/obj/
+native/shared-tests/bin/
+native/shared-tests/obj/
 native/autocad2027/bin/
 native/autocad2027/obj/
 

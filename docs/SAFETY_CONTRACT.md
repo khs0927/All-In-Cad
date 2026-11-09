@@ -10,6 +10,17 @@ A write may execute only when: the adapter advertises the capability; active doc
 
 The bootstrap uses a short-lived HMAC-SHA256 token containing plan ID, document ID, expected revision, SHA-256 plan digest, expiry, and nonce. The signing secret stays in the control plane.
 
+## Native host write approval gate
+
+The AutoCAD 2027 plugin's direct pipe writes (`host.draw_line`, `host.send_command`, the `xicad.*`
+writers and `xicad.rollback`) are not `ChangePlan`s, so they carry their own fence: a single-use,
+short-lived, operation-bound token from `host.plan_write` (ON by default, opt-out
+`AIC_REQUIRE_APPROVAL=0`), plus an always-on command denylist for `host.send_command` /
+`xicad.run`. Details: `docs/PROTOCOL.md`, section "AutoCAD 2027 plugin methods and the write
+approval gate". power-cad-mcp's writers, which can be loaded into the same AutoCAD process, already
+require approval (power-cad-mcp `docs/ecosystem/CAD_CONSOLIDATION_PLAN.md`); this closes the gap on
+the All-In-Cad side.
+
 ## Idempotency
 
 Accepted, committed, and failed requests are journaled. Replaying a committed request with the same key and exact digest returns the original receipt without executing the host twice. Reusing a key with a different digest fails closed.
