@@ -23,7 +23,11 @@ Required production properties:
 - idempotency key;
 - fail-closed stale-revision checks;
 - handle readback and requested/actual/diff;
-- no arbitrary C# execution by default.
+- no arbitrary C# execution by default;
+- write approval gate (implemented): every writing / command-executing pipe method needs a
+  single-use token from `host.plan_write` (`native/shared/HostWriteGuard.cs`, ON by default,
+  opt-out `AIC_REQUIRE_APPROVAL=0` in the acad.exe environment), and `host.send_command` /
+  `xicad.run` pass an always-on command denylist. See `docs/PROTOCOL.md`.
 
 Repeatable host check: `scripts/windows-live-smoke.ps1` (`-DryRun` detection, default read-only pipe ping/context,
 `-Write` one LINE on a new `%TEMP%` drawing with COM readback). Evidence goes to `artifacts/live-smoke/` and is promoted

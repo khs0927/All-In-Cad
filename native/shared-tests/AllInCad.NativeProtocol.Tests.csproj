@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Dependency-free console test runner for native/shared. No NuGet test framework, so it builds
+    offline and on the CI ubuntu runner. Exit code 0 = all checks passed.
+      dotnet run (project native/shared-tests) with the vectors path tests/fixtures/host_approval_vectors.json
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\shared\AllInCad.NativeProtocol.csproj" />
+  </ItemGroup>
+</Project>

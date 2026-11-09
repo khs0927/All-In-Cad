@@ -36,6 +36,10 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - run: dotnet build native/shared/AllInCad.NativeProtocol.csproj --configuration Release
+      - name: Write approval gate checks (C# side, shared cross-language vectors)
+        run: >
+          dotnet run --project native/shared-tests/AllInCad.NativeProtocol.Tests.csproj
+          --configuration Release -- tests/fixtures/host_approval_vectors.json
       - run: dotnet build native/headless/AllInCad.ACadSharpProbe.csproj --configuration Release
       - name: Exercise ACadSharp capability probe
         run: >

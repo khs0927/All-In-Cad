@@ -15,6 +15,9 @@
               LINE through the pipe (host.draw_line), reads it back independently through COM,
               then closes the temp drawing and restores the previously active document.
               Drawings the user has open are never modified, saved or closed.
+              The worker's write approval gate is exercised on the temp drawing too: an
+              untokened host.draw_line must be refused, the LINE is drawn with a single-use
+              token from host.plan_write, and re-sending that token must be refused.
 
   Every run gets its own directory artifacts/live-smoke/<runId>/ containing live-smoke.json
   (schema all-in-cad/live-smoke/v1) plus the raw responses it was built from, each with a
@@ -295,7 +298,10 @@ if (-not $DryRun) {
     Save-Output "rpc-host.capabilities.json" $reply.raw | Out-Null
     $result = Assert-RpcOk $reply "host.capabilities"
     if (-not $result.sdk_bound) { throw "worker was built without AIC_AUTOCAD_SDK" }
-    [ordered]@{ capabilities = @($result.capabilities); sdk_bound = $result.sdk_bound }
+    # A worker without the approval gate predates host.plan_write; -Write then fails loudly.
+    $script:state["approvalRequired"] = $null
+    if ($result.approval) { $script:state["approvalRequired"] = [bool]$result.approval.required }
+    [ordered]@{ capabilities = @($result.capabilities); sdk_bound = $result.sdk_bound; approval_required = $script:state["approvalRequired"] }
   } | Out-Null
 
   Invoke-Step "pipe.context" {
@@ -358,9 +364,40 @@ if ($Write) {
     } | Out-Null
 
     $requested = [ordered]@{ x1 = 0.0; y1 = 0.0; x2 = 1234.5; y2 = 678.9 }
+    $lineParams = @{ x1 = $requested.x1; y1 = $requested.y1; x2 = $requested.x2; y2 = $requested.y2 }
+
+    Invoke-Step "pipe.approval_gate" {
+      if (-not $script:state["guardOk"]) { throw "temp-drawing guard did not pass" }
+      if ($null -eq $script:state["approvalRequired"]) { throw "worker reports no approval gate; rebuild and redeploy the plugin" }
+      if (-not $script:state["approvalRequired"]) { return (Skip "worker runs with AIC_REQUIRE_APPROVAL=0 (opt-out); untokened writes are accepted") }
+      # Still inside the temp drawing: if the gate were broken this would only touch the temp file.
+      $reply = Invoke-AicRpc $script:state["pipe"] "host.draw_line" $lineParams
+      Save-Output "rpc-host.draw_line.untokened.json" $reply.raw | Out-Null
+      if ($reply.response.ok) { throw "untokened host.draw_line was ACCEPTED; approval gate is not enforced" }
+      if ($reply.response.error.code -ne "E_APPROVAL_REQUIRED") { throw "expected E_APPROVAL_REQUIRED, got $($reply.response.error.code)" }
+      $ctx = Assert-RpcOk (Invoke-AicRpc $script:state["pipe"] "host.context" @{}) "host.context"
+      if ([int]$ctx.document.entity_count -ne 0) { throw "refused write still changed the temp drawing" }
+      [ordered]@{ refused_code = $reply.response.error.code; entity_count_after = $ctx.document.entity_count }
+    } | Out-Null
+
+    Invoke-Step "pipe.approval_request" {
+      if (-not $script:state["guardOk"]) { throw "temp-drawing guard did not pass" }
+      $reply = Invoke-AicRpc $script:state["pipe"] "host.plan_write" @{ method = "host.draw_line"; params = $lineParams }
+      Save-Output "rpc-host.plan_write.json" $reply.raw | Out-Null
+      $plan = Assert-RpcOk $reply "host.plan_write"
+      if (-not $plan.approval_token) { throw "host.plan_write returned no approval_token" }
+      $script:state["approvalToken"] = [string]$plan.approval_token
+      $tokenBytes = [System.Text.Encoding]::UTF8.GetBytes([string]$plan.approval_token)
+      $tokenDigest = ([System.BitConverter]::ToString((New-Object System.Security.Cryptography.SHA256Managed).ComputeHash($tokenBytes))).Replace("-", "").ToLowerInvariant()
+      [ordered]@{ plan_id = $plan.plan_id; operation_digest = $plan.operation_digest; expires_at = $plan.expires_at; ttl_seconds = $plan.ttl_seconds; approval_required = $plan.approval_required; approval_token_sha256 = $tokenDigest }
+    } | Out-Null
+
     Invoke-Step "pipe.draw_line" {
       if (-not $script:state["guardOk"]) { throw "temp-drawing guard did not pass" }
-      $reply = Invoke-AicRpc $script:state["pipe"] "host.draw_line" @{ x1 = $requested.x1; y1 = $requested.y1; x2 = $requested.x2; y2 = $requested.y2 }
+      if (-not $script:state["approvalToken"]) { throw "no approval token (pipe.approval_request did not pass)" }
+      $drawParams = @{} + $lineParams
+      $drawParams["approval_token"] = $script:state["approvalToken"]
+      $reply = Invoke-AicRpc $script:state["pipe"] "host.draw_line" $drawParams
       Save-Output "rpc-host.draw_line.json" $reply.raw | Out-Null
       $result = Assert-RpcOk $reply "host.draw_line"
       $after = Get-Prop $result.after @("EntityCount", "entity_count")
@@ -369,6 +406,20 @@ if ($Write) {
       $script:state["lineHandle"] = [string]$result.line_id
       $script:state["pipeAfterCount"] = [int]$after
       [ordered]@{ handle = $result.line_id; delta_entities = $result.delta_entities; entity_count_after = $after; revision_after = (Get-Prop $result.after @("Revision", "revision")) }
+    } | Out-Null
+
+    Invoke-Step "pipe.approval_reuse" {
+      if (-not $script:state["lineHandle"]) { throw "pipe.draw_line did not pass" }
+      if (-not $script:state["approvalRequired"]) { return (Skip "worker runs with AIC_REQUIRE_APPROVAL=0 (opt-out)") }
+      $again = @{} + $lineParams
+      $again["approval_token"] = $script:state["approvalToken"]
+      $reply = Invoke-AicRpc $script:state["pipe"] "host.draw_line" $again
+      Save-Output "rpc-host.draw_line.reused.json" $reply.raw | Out-Null
+      if ($reply.response.ok) { throw "re-sent approval token was ACCEPTED; tokens are not single-use" }
+      if ($reply.response.error.code -ne "E_APPROVAL_REUSED") { throw "expected E_APPROVAL_REUSED, got $($reply.response.error.code)" }
+      $ctx = Assert-RpcOk (Invoke-AicRpc $script:state["pipe"] "host.context" @{}) "host.context"
+      if ([int]$ctx.document.entity_count -ne $script:state["pipeAfterCount"]) { throw "refused write still changed the temp drawing" }
+      [ordered]@{ refused_code = $reply.response.error.code; entity_count_after = $ctx.document.entity_count }
     } | Out-Null
 
     Invoke-Step "com.readback" {

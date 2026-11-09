@@ -99,6 +99,13 @@ After AutoCAD 2027 installation is complete:
 .\scripts\windows\benchmark_hosts.ps1
 ```
 
+The AutoCAD 2027 plugin gates every pipe method that writes or runs command text behind a
+single-use approval token: call `host.plan_write` with `{method, params}`, then send the method
+with the same params plus `approval_token` (expires after 120 s, works once).
+`host.send_command` also has an always-on command denylist (no `SHELL`, `NETLOAD`, `SAVE*`,
+`QUIT`, LISP, ...). For trusted local automation only, start AutoCAD with
+`AIC_REQUIRE_APPROVAL=0` to skip the token. See `docs/PROTOCOL.md`.
+
 The next live milestone is the same capability matrix across Autodesk Official MCP, `bimwright/dwg-mcp` 2027, PyRx in AutoCAD 2027, and PyRx in ZWCAD 2026.
 
 ### Extraction probe evidence

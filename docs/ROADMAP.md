@@ -42,6 +42,7 @@ Host-independent work is completed first; CAD-specific execution remains live-ho
 - [x] Bind shared Named Pipe worker to AutoCAD 2027 document/database APIs.
 - [ ] AutoCAD 2027: commit a v1 LINE primitive in a native transaction on a %TEMP% drawing (`scripts/windows-live-smoke.ps1 -Write`).
 - [ ] AutoCAD 2027: read back the committed LINE through COM and cross-check it against the request (`scripts/windows-live-smoke.ps1 -Write`).
+- [ ] AutoCAD 2027: the live worker refuses untokened and re-used pipe writes (write approval gate, `scripts/windows-live-smoke.ps1 -Write`).
 - [ ] Bind shared Named Pipe worker to ZWCAD 2026 ZRX.NET APIs.
 - [ ] Execute v1 primitives in real native transactions on both hosts.
 - [ ] Capture native post-commit readback from both hosts.
