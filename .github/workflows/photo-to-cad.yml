@@ -1,0 +1,21 @@
+name: Photo-to-CAD MVP (offline CI)
+on:
+  pull_request:
+    paths:
+      - "photo-to-cad/**"
+      - ".github/workflows/photo-to-cad.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e './photo-to-cad[test]'
+      - run: pytest -q photo-to-cad/tests/test_pipeline.py photo-to-cad/tests/test_server.py
+      - run: node --test photo-to-cad/tests/test_worker.mjs

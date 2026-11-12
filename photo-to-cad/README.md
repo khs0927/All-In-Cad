@@ -68,3 +68,20 @@ Never auto-modify a live DWG. Source footprints can differ from true exterior wa
 3. Implement robust scale/rigid alignment, report withheld check distances and uncertainties.
 4. Extract walls/openings, hand-check, export IFC wall/window semantics and CAD layers.
 5. Deploy worker + backend only once permissions/quotas/authorizations have been reviewed.
+
+## CPU-only Oracle backend (local test complete; NOT deployed)
+
+`src/photo_to_cad/server.py` accepts authenticated, small job-manifest references and uses approved local GeoJSON files only. It does not download internet content or execute external commands. It binds **127.0.0.1** and requires a separately configured authenticated HTTPS proxy before it can be called by the Worker. No new ports, systemd services or reverse-proxy routes have been opened on any real Oracle server.
+
+```bash
+mkdir -p private-data/inbox/project private-data/jobs
+cp examples/footprint.geojson private-data/inbox/project/building.geojson
+printf '{"geojson":"building.geojson","height_m":9.5,"height_source":"estimated"}\n' > private-data/inbox/project/manifest.json
+PHOTO_CAD_DATA_ROOT=./private-data PHOTO_CAD_BACKEND_TOKEN='a-strong-random-token-at-least-20' python -m photo_to_cad.server
+# on localhost only, in another shell:
+curl -sS -H 'Authorization: Bearer a-strong-random-token-at-least-20' -H 'Content-Type: application/json' \
+  --data '{"job_id":"pilot_0001","input_manifest_ref":"project/manifest.json"}' \
+  http://127.0.0.1:8788/jobs
+```
+
+No job status/retrieval API, cloud storage or mobile upload interface exists yet. Do not expose the Python server to the public internet directly. See `docs/WORK_HANDOFF.md` for the next verified Work phase.
