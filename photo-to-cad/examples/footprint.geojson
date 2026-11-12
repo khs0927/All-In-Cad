@@ -1,0 +1,8 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type": "Feature", "id": "SYNTHETIC_001",
+     "properties": {"id": "SYNTHETIC_001", "note": "Synthetic test building, NOT an actual land parcel"},
+     "geometry": {"type": "Polygon", "coordinates": [[[129.070000,35.180000],[129.070125,35.180000],[129.070125,35.180090],[129.070000,35.180090],[129.070000,35.180000]]]}}
+  ]
+}

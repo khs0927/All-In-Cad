@@ -1,0 +1,7 @@
+name = "photo-to-cad-controller"
+main = "index.mjs"
+compatibility_date = "2026-11-13"
+workers_dev = true
+# Only after explicit deployment approval and checking free limits.
+# Set API_BEARER_TOKEN and JOB_BACKEND_TOKEN with `wrangler secret put`.
+# JOB_BACKEND_URL is a fixed, vetted HTTPS endpoint. Never accept it from clients.

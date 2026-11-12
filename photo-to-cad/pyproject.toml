@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "photo-to-cad"
+version = "0.1.0"
+description = "Evidence-first GIS/photogrammetry to CAD pilot: conservative metric geometry and source provenance"
+requires-python = ">=3.11"
+dependencies = ["ezdxf>=1.4,<2", "pyproj>=3.5,<4", "shapely>=2,<3"]
+
+[project.optional-dependencies]
+ifc = ["ifcopenshell>=0.8,<0.9"]
+test = ["pytest>=8"]
+
+[project.scripts]
+photo-to-cad = "photo_to_cad.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/photo_to_cad"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
